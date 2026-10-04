@@ -33,7 +33,8 @@ public class BoostService extends Service {
     final Handler h = new Handler(Looper.getMainLooper());
     WindowManager wm;
     LinearLayout panel;
-    TextView pingTv, ramTv, tempTv;
+    TextView pingTv, ramTv, tempTv, fpsTv;
+    volatile int lastFps = -1;
     String game;
     long notForegroundSince = 0;
     PowerManager.WakeLock wl;
@@ -59,13 +60,20 @@ public class BoostService extends Service {
         else startForeground(1, n);
 
         Tweaks.apply(this);
-        if (Boost.prefs(this).getBoolean("dnd", true)) Boost.dndOn(this);
-        if (Boost.prefs(this).getBoolean("overlay", true) && Settings.canDrawOverlays(this)) showPanel();
+        if (!Boost.prefs(this).getString("dnd_mode", "priority").equals("off")) Boost.dndOn(this);
+        if (!Boost.prefs(this).getString("ov_mode", "full").equals("off") && Settings.canDrawOverlays(this)) showPanel();
         PowerManager pm = getSystemService(PowerManager.class);
         wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "boost:game");
         wl.acquire(4 * 3600_000L);
         h.post(tick);
         new Thread(pinger).start();
+        Sh.layer = null;
+        new Thread(() -> {
+            while (running) {
+                lastFps = (game != null && Boost.prefs(this).getBoolean("fps", true)) ? Sh.fps(game) : -1;
+                try { Thread.sleep(1000); } catch (InterruptedException e) { return; }
+            }
+        }).start();
         return START_NOT_STICKY;
     }
 
@@ -82,6 +90,10 @@ public class BoostService extends Service {
         @Override public void run() {
             if (!running) return;
             if (panel != null) {
+                int f = lastFps;
+                fpsTv.setVisibility(f < 0 ? View.GONE : View.VISIBLE);
+                fpsTv.setText(f + " FPS");
+                fpsTv.setTextColor(f >= 55 ? 0xFF34D399 : f >= 30 ? 0xFFFBBF24 : 0xFFEF4444);
                 int p = lastPing;
                 pingTv.setText(p < 0 ? "— ms" : p + " ms");
                 pingTv.setTextColor(p < 0 ? 0xFFEF4444 : p < 80 ? 0xFF34D399 : p < 150 ? 0xFFFBBF24 : 0xFFEF4444);
@@ -95,7 +107,10 @@ public class BoostService extends Service {
                 String fg = Boost.lastForeground(BoostService.this, null);
                 if (fg != null && !fg.equals(game) && !fg.equals(getPackageName())) {
                     if (notForegroundSince == 0) notForegroundSince = System.currentTimeMillis();
-                    else if (System.currentTimeMillis() - notForegroundSince > 30_000) { stopSelf(); return; }
+                    else {
+                        int sec = Integer.parseInt(Boost.prefs(BoostService.this).getString("autostop", "30"));
+                        if (sec > 0 && System.currentTimeMillis() - notForegroundSince > sec * 1000L) { stopSelf(); return; }
+                    }
                 } else if (fg != null && fg.equals(game)) notForegroundSince = 0;
             }
             h.postDelayed(this, 2000);
@@ -106,7 +121,8 @@ public class BoostService extends Service {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextColor(Color.WHITE);
-        t.setTextSize(12);
+        String sz = Boost.prefs(this).getString("ov_size", "normal");
+        t.setTextSize(sz.equals("small") ? 10 : sz.equals("large") ? 15 : 12);
         t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         t.setPadding(dp(6), 0, dp(6), 0);
         return t;
@@ -118,12 +134,16 @@ public class BoostService extends Service {
         panel.setGravity(Gravity.CENTER_VERTICAL);
         panel.setPadding(dp(8), dp(5), dp(8), dp(5));
         GradientDrawable g = new GradientDrawable();
-        g.setColor(0xB30B1020);
+        int alpha = Integer.parseInt(Boost.prefs(this).getString("ov_alpha", "70"));
+        g.setColor(((alpha * 255 / 100) << 24) | 0x0B1020);
         g.setCornerRadius(dp(14));
         g.setStroke(dp(1), 0x33FFFFFF);
         panel.setBackground(g);
-        pingTv = chip("…"); ramTv = chip("…"); tempTv = chip("…");
-        panel.addView(pingTv); panel.addView(ramTv); panel.addView(tempTv);
+        pingTv = chip("…"); ramTv = chip("…"); tempTv = chip("…"); fpsTv = chip("");
+        fpsTv.setVisibility(View.GONE);
+        panel.addView(fpsTv);
+        panel.addView(pingTv);
+        if (Boost.prefs(this).getString("ov_mode", "full").equals("full")) { panel.addView(ramTv); panel.addView(tempTv); }
         final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,

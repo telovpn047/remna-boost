@@ -80,13 +80,41 @@ final class Boost {
         return i.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10f;
     }
 
-    /** TCP bağlantı süresiyle ping (ms), başarısızsa -1. */
-    static int ping(String host, int port) {
-        long t = System.nanoTime();
-        try (Socket s = new Socket()) {
-            s.connect(new InetSocketAddress(host, port), 2000);
-            return (int) Math.max(1, (System.nanoTime() - t) / 1_000_000);
+    static final java.util.Map<String, java.net.InetAddress> DNS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Gerçek gidiş-dönüş süresi (ms): bağlantı kurulduktan sonra küçük bir HTTP isteği gönderip ilk baytın
+     * gelişini ölçer. VPN açıkken TCP bağlantısı yerelde hemen kabul edildiği için yalnızca bağlantı süresi
+     * yanıltıcıdır; bu yöntem tünel dahil gerçek yolu ölçer. DNS süresi ölçüme katılmaz. Başarısızsa -1.
+     */
+    static int ping(String host, int ignoredPort) {
+        int best = -1;
+        for (int i = 0; i < 2; i++) {
+            int r = rtt(host);
+            if (r > 0 && (best < 0 || r < best)) best = r;
+        }
+        return best;
+    }
+
+    static int rtt(String host) {
+        try {
+            java.net.InetAddress a = DNS.get(host);
+            if (a == null) { a = java.net.InetAddress.getByName(host); DNS.put(host, a); }
+            try (Socket s = new Socket()) {
+                s.setTcpNoDelay(true);
+                s.setSoTimeout(3000);
+                s.connect(new InetSocketAddress(a, 80), 3000);
+                java.io.OutputStream o = s.getOutputStream();
+                java.io.InputStream in = s.getInputStream();
+                byte[] req = ("HEAD / HTTP/1.1\r\nHost: " + host + "\r\nConnection: close\r\n\r\n").getBytes();
+                long t = System.nanoTime();
+                o.write(req);
+                o.flush();
+                if (in.read() < 0) return -1;
+                return (int) Math.max(1, (System.nanoTime() - t) / 1_000_000);
+            }
         } catch (Exception e) {
+            DNS.remove(host);
             return -1;
         }
     }
@@ -102,7 +130,11 @@ final class Boost {
         if (nm == null || !nm.isNotificationPolicyAccessGranted()) return;
         SharedPreferences p = prefs(c);
         if (!p.contains("dnd_prev")) p.edit().putInt("dnd_prev", nm.getCurrentInterruptionFilter()).apply();
-        nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY);
+        String mode = p.getString("dnd_mode", "priority");
+        int f = mode.equals("alarms") ? NotificationManager.INTERRUPTION_FILTER_ALARMS
+                : mode.equals("none") ? NotificationManager.INTERRUPTION_FILTER_NONE
+                : NotificationManager.INTERRUPTION_FILTER_PRIORITY;
+        nm.setInterruptionFilter(f);
     }
 
     static void dndOff(Context c) {
@@ -133,6 +165,14 @@ final class Boost {
             if (e.getEventType() == UsageEvents.Event.ACTIVITY_RESUMED) last = e.getPackageName();
         }
         return last;
+    }
+
+    /** Şu an bir VPN üzerinden mi bağlıyız? */
+    static boolean vpnActive(Context c) {
+        android.net.ConnectivityManager cm = c.getSystemService(android.net.ConnectivityManager.class);
+        if (cm == null) return false;
+        android.net.NetworkCapabilities nc = cm.getNetworkCapabilities(cm.getActiveNetwork());
+        return nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN);
     }
 
     static String fmtGb(long bytes) { return String.format(java.util.Locale.US, "%.1f GB", bytes / 1073741824.0); }

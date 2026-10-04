@@ -42,11 +42,15 @@ import java.util.List;
 public class MainActivity extends Activity {
     static final int BG = 0xFF070B16, CARD = 0x0DFFFFFF, TX = 0xFFF1F5F9, TX2 = 0xFF94A3B8, TX3 = 0xFF64748B;
     static final int OR = 0xFFF97316, RED = 0xFFE11D48, GREEN = 0xFF34D399;
+    /** PUBG Mobile bölgeleri ve o bölgedeki veri merkezine yakın ölçüm noktaları (AWS S3, HTTP 80). */
     static final String[][] REGIONS = {
-            {"Orta Doğu", "ec2.me-south-1.amazonaws.com"},
-            {"Avrupa", "ec2.eu-central-1.amazonaws.com"},
-            {"Asya", "ec2.ap-southeast-1.amazonaws.com"},
-            {"Hindistan", "ec2.ap-south-1.amazonaws.com"},
+            {"Orta Doğu", "s3.me-south-1.amazonaws.com", "Bahreyn"},
+            {"Avrupa", "s3.eu-central-1.amazonaws.com", "Frankfurt"},
+            {"Asya", "s3.ap-southeast-1.amazonaws.com", "Singapur"},
+            {"KRJP", "s3.ap-northeast-1.amazonaws.com", "Tokyo"},
+            {"Hindistan (BGMI)", "s3.ap-south-1.amazonaws.com", "Mumbai"},
+            {"Kuzey Amerika", "s3.us-east-1.amazonaws.com", "Virginia"},
+            {"Güney Amerika", "s3.sa-east-1.amazonaws.com", "São Paulo"},
     };
     static final String ADB_CMD = "adb shell pm grant com.remna.boost android.permission.WRITE_SECURE_SETTINGS";
 
@@ -64,7 +68,15 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = Boost.prefs(this);
+        String ph = prefs.getString("ping_host", "");
+        if (ph.startsWith("ec2.")) prefs.edit().putString("ping_host", "s3." + ph.substring(4)).apply();
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+        try {
+            rikka.shizuku.Shizuku.addRequestPermissionResultListener((code, res) -> h.post(() -> {
+                if (res == PackageManager.PERMISSION_GRANTED) { Tweaks.secureAllowed(this); toast("Shizuku bağlandı"); }
+                renderPerms();
+            }));
+        } catch (Throwable ignored) {}
         setContentView(build());
     }
 
@@ -167,15 +179,48 @@ public class MainActivity extends Activity {
         pingTv = stat(st, "Ping");
         root.addView(st, mlp(18));
 
+        LinearLayout tc = card();
+        LinearLayout tt = new LinearLayout(this);
+        tt.setOrientation(LinearLayout.VERTICAL);
+        tt.addView(text("Sunucu ping testi", 15, TX, true));
+        tt.addView(text("Tüm PUBG bölgelerini ölç, en iyisini bul", 12, TX2, false));
+        tc.addView(tt, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView go = text("Başlat", 14, OR, true);
+        tc.addView(go);
+        tc.setOnClickListener(v -> openRegionTest());
+        root.addView(tc, mlp(12));
+
         // ayarlar
-        root.addView(section("OYUN MODU"));
+        root.addView(section("BOOST"));
         root.addView(toggle("Arka plan uygulamalarını kapat", "Boost sırasında RAM boşaltır", "kill", true, null));
-        root.addView(toggle("Rahatsız etme", "Oyunda bildirim ve arama gelmez", "dnd", true, this::askDnd), mlp(8));
-        root.addView(toggle("Oyun üstü panel", "Ping · boş RAM · sıcaklık", "overlay", true, this::askOverlay), mlp(8));
-        root.addView(toggle("Maksimum yenileme hızı", String.format(java.util.Locale.US, "Ekranı %.0f Hz'e sabitler · ADB izni gerekir", Tweaks.maxRefresh(this)), "hz", true, this::askSystem), mlp(8));
+
+        root.addView(section("OYUN SIRASINDA"));
+        root.addView(choice("Rahatsız etme", "dnd_mode", "priority",
+                new String[]{"Kapalı", "Öncelikli (aramalar önemli kişilerden)", "Sadece alarmlar", "Tam sessiz"},
+                new String[]{"off", "priority", "alarms", "none"}, this::askDnd));
+        java.util.List<Integer> rates = Tweaks.refreshRates(this);
+        String[] hzL = new String[rates.size() + 2], hzV = new String[rates.size() + 2];
+        hzL[0] = "Kapalı (sistem yönetsin)"; hzV[0] = "off";
+        hzL[1] = "En yüksek (" + Math.round(Tweaks.maxRefresh(this)) + " Hz)"; hzV[1] = "max";
+        for (int i = 0; i < rates.size(); i++) { hzL[i + 2] = "Sabit " + rates.get(i) + " Hz"; hzV[i + 2] = String.valueOf(rates.get(i)); }
+        root.addView(choice("Sabit yenileme hızı (FPS sınırı)", "hz_mode", "max", hzL, hzV, this::askAdb), mlp(8));
+        root.addView(choice("Animasyon hızı", "anim_mode", "0.5",
+                new String[]{"Değiştirme", "Hızlı (0.5x)", "Kapalı (0x)"}, new String[]{"off", "0.5", "0"}, this::askAdb), mlp(8));
         root.addView(toggle("Otomatik parlaklığı kapat", "Oyunda parlaklık zıplamaz", "autobright", true, this::askSystem), mlp(8));
-        root.addView(toggle("Animasyonları hızlandır", "ADB izni gerekir (tek seferlik)", "anim", true, null), mlp(8));
+
+        root.addView(section("OYUN ÜSTÜ PANEL"));
+        root.addView(toggle("FPS göstergesi", "Oyunun gerçek FPS'i · Shizuku gerekir", "fps", true, this::askShizuku));
+        root.addView(choice("Panel", "ov_mode", "full",
+                new String[]{"Kapalı", "FPS · ping", "FPS · ping · RAM · sıcaklık"}, new String[]{"off", "ping", "full"}, this::askOverlay), mlp(8));
+        root.addView(choice("Panel boyutu", "ov_size", "normal",
+                new String[]{"Küçük", "Normal", "Büyük"}, new String[]{"small", "normal", "large"}, null), mlp(8));
+        root.addView(choice("Panel saydamlığı", "ov_alpha", "70",
+                new String[]{"%30", "%50", "%70", "%90"}, new String[]{"30", "50", "70", "90"}, null), mlp(8));
         root.addView(regionRow(), mlp(8));
+
+        root.addView(section("OTOMATİK"));
+        root.addView(choice("Oyundan çıkınca kapat", "autostop", "30",
+                new String[]{"Kapalı (elle kapat)", "15 sn sonra", "30 sn sonra", "60 sn sonra"}, new String[]{"0", "15", "30", "60"}, this::askUsage));
 
         root.addView(section("İZİNLER"));
         permBox = new LinearLayout(this);
@@ -215,11 +260,58 @@ public class MainActivity extends Activity {
         sw.setOnCheckedChangeListener((b, on) -> {
             prefs.edit().putBoolean(key, on).apply();
             if (on && onEnable != null) onEnable.run();
+            if (BoostService.running) Tweaks.reapply(this);
         });
         l.addView(sw);
         l.setOnClickListener(v -> sw.toggle());
         return l;
     }
+
+    /** Seçenekli ayar satırı; oyun modu açıksa değişiklik hemen uygulanır. */
+    View choice(String title, String key, String def, String[] labels, String[] values, Runnable onEnable) {
+        LinearLayout l = card();
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.addView(text(title, 15, TX, true));
+        TextView sub = text(labelOf(key, def, labels, values), 12, OR, false);
+        t.addView(sub);
+        l.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+        l.addView(text("›", 22, TX3, false));
+        l.setOnClickListener(v -> {
+            String cur = prefs.getString(key, def);
+            int sel = 0;
+            for (int i = 0; i < values.length; i++) if (values[i].equals(cur)) sel = i;
+            new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(title)
+                    .setSingleChoiceItems(labels, sel, (d, w) -> {
+                        prefs.edit().putString(key, values[w]).apply();
+                        sub.setText(labels[w]);
+                        d.dismiss();
+                        if (!values[w].equals("off") && onEnable != null) onEnable.run();
+                        if (BoostService.running) {
+                            Tweaks.reapply(this);
+                            if (key.startsWith("ov_")) toast("Panel ayarı bir sonraki oyun modunda geçerli olur");
+                        }
+                    }).show();
+        });
+        return l;
+    }
+
+    String labelOf(String key, String def, String[] labels, String[] values) {
+        String cur = prefs.getString(key, def);
+        for (int i = 0; i < values.length; i++) if (values[i].equals(cur)) return labels[i];
+        return labels[0];
+    }
+
+    void askShizuku() {
+        if (Sh.granted()) return;
+        if (Sh.running()) { Sh.request(); return; }
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Shizuku")
+                .setMessage("FPS göstergesi ve otomatik ADB izni için Shizuku uygulaması gerekir.\n\n1) Shizuku'yu kur (Play Store / GitHub)\n2) Shizuku'yu aç → 'Kablosuz hata ayıklama ile başlat'\n3) Remna Boost'a dönüp izin ver\n\nTelefon yeniden başlarsa Shizuku'yu tekrar başlatman gerekir.")
+                .setPositiveButton("Shizuku'yu indir", (d, w) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest"))))
+                .setNegativeButton("Kapat", null).show();
+    }
+
+    void askAdb() { if (!Tweaks.secureAllowed(this)) showAdbHelp(); }
 
     View regionRow() {
         LinearLayout l = card();
@@ -237,6 +329,93 @@ public class MainActivity extends Activity {
                     .show();
         });
         return l;
+    }
+
+    /* ---------------- bölge ping testi ---------------- */
+    void openRegionTest() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(8), dp(18), dp(8));
+        boolean vpn = Boost.vpnActive(this);
+        TextView head = text((vpn ? "VPN üzerinden ölçülüyor" : "Doğrudan bağlantı (VPN kapalı)") + " · her bölge 6 deneme", 12, TX2, false);
+        box.addView(head);
+        TextView rec = text("Ölçülüyor…", 15, OR, true);
+        rec.setPadding(0, dp(8), 0, dp(10));
+        box.addView(rec);
+        int n = REGIONS.length;
+        TextView[] res = new TextView[n];
+        LinearLayout[] rows = new LinearLayout[n];
+        for (int i = 0; i < n; i++) {
+            LinearLayout r = card();
+            r.setPadding(dp(14), dp(10), dp(14), dp(10));
+            LinearLayout t = new LinearLayout(this);
+            t.setOrientation(LinearLayout.VERTICAL);
+            t.addView(text(REGIONS[i][0], 15, TX, true));
+            res[i] = text("…", 12, TX2, false);
+            t.addView(res[i]);
+            r.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+            r.addView(text(REGIONS[i][2], 11, TX3, false));
+            final int idx = i;
+            r.setOnClickListener(v -> {
+                prefs.edit().putString("ping_host", REGIONS[idx][1]).apply();
+                toast("Panel pingi artık " + REGIONS[idx][0] + " bölgesini ölçecek");
+            });
+            rows[i] = r;
+            box.addView(r, mlp(6));
+        }
+        TextView foot = text("Bir bölgeye dokunursan oyun üstü panel o bölgenin pingini gösterir. Bölgeyi PUBG lobisinde sol üstten değiştirebilirsin. Değerler o bölgedeki veri merkezine göre ölçülür; oyundaki ping birkaç ms farklı olabilir.", 11, TX3, false);
+        foot.setPadding(0, dp(10), 0, 0);
+        box.addView(foot);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        AlertDialog dlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("PUBG bölge ping testi").setView(sv).setNegativeButton("Kapat", null).show();
+
+        int[] best = new int[n];
+        int[] done = {0};
+        for (int i = 0; i < n; i++) {
+            final int idx = i;
+            new Thread(() -> {
+                int ok = 0, min = Integer.MAX_VALUE;
+                long sum = 0, jit = 0;
+                int prev = -1;
+                for (int k = 0; k < 6; k++) {
+                    int r = Boost.rtt(REGIONS[idx][1]);
+                    if (r > 0) {
+                        ok++; sum += r; min = Math.min(min, r);
+                        if (prev > 0) jit += Math.abs(r - prev);
+                        prev = r;
+                    }
+                    try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+                }
+                final int fOk = ok, fMin = min;
+                final long avg = ok > 0 ? sum / ok : -1, jitter = ok > 1 ? jit / (ok - 1) : 0;
+                final int loss = (6 - ok) * 100 / 6;
+                h.post(() -> {
+                    if (!dlg.isShowing()) return;
+                    if (fOk == 0) {
+                        res[idx].setText("Ulaşılamadı");
+                        res[idx].setTextColor(RED);
+                        best[idx] = Integer.MAX_VALUE;
+                    } else {
+                        res[idx].setText(fMin + " ms  ·  ort " + avg + "  ·  dalgalanma " + jitter + "  ·  kayıp %" + loss);
+                        res[idx].setTextColor(fMin < 80 ? GREEN : fMin < 150 ? 0xFFFBBF24 : RED);
+                        // oyunda önemli olan: düşük ping + az dalgalanma + kayıpsız
+                        best[idx] = (int) (fMin + jitter * 2 + loss * 10);
+                    }
+                    done[0]++;
+                    if (done[0] == n) {
+                        int b = 0;
+                        for (int j = 1; j < n; j++) if (best[j] < best[b]) b = j;
+                        if (best[b] == Integer.MAX_VALUE) { rec.setText("Hiçbir bölgeye ulaşılamadı"); rec.setTextColor(RED); return; }
+                        rec.setText("Önerilen: " + REGIONS[b][0]);
+                        GradientDrawable g = round(0x1AF97316, 20);
+                        g.setStroke(dp(1), OR);
+                        rows[b].setBackground(g);
+                    }
+                });
+            }).start();
+        }
     }
 
     String regionName() {
@@ -343,7 +522,8 @@ public class MainActivity extends Activity {
         perm("Rahatsız etme erişimi", Boost.dndAllowed(this), this::askDnd);
         perm("Sistem ayarlarını değiştirme", Tweaks.systemAllowed(this), this::askSystem);
         perm("Kullanım erişimi (oyundan çıkınca otomatik kapanır)", Boost.usageAllowed(this), this::askUsage);
-        perm("ADB izni (animasyonlar)", Tweaks.secureAllowed(this), this::showAdbHelp);
+        perm("Shizuku (FPS · otomatik ADB izni)", Sh.granted(), this::askShizuku);
+        perm("ADB izni (sabit Hz · animasyon)", Tweaks.secureAllowed(this), this::showAdbHelp);
     }
 
     void perm(String name, boolean ok, Runnable ask) {

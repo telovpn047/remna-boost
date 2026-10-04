@@ -15,6 +15,8 @@ final class Tweaks {
 
     /** Tek seferlik ADB izni verilmiş mi? (pm grant ... WRITE_SECURE_SETTINGS) */
     static boolean secureAllowed(Context c) {
+        if (c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED && Sh.granted())
+            Sh.exec("pm grant " + c.getPackageName() + " android.permission.WRITE_SECURE_SETTINGS");
         return c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == PackageManager.PERMISSION_GRANTED;
     }
 
@@ -28,21 +30,41 @@ final class Tweaks {
         return m;
     }
 
+    /** Ekranın desteklediği yenileme hızları (60, 90, 120…). */
+    static java.util.List<Integer> refreshRates(Context c) {
+        java.util.TreeSet<Integer> set = new java.util.TreeSet<>();
+        DisplayManager dm = c.getSystemService(DisplayManager.class);
+        Display d = dm != null ? dm.getDisplay(Display.DEFAULT_DISPLAY) : null;
+        if (d != null) for (Display.Mode mode : d.getSupportedModes()) set.add(Math.round(mode.getRefreshRate()));
+        if (set.isEmpty()) set.add(60);
+        return new java.util.ArrayList<>(set);
+    }
+
+    /** Oyun modu açıkken ayar değişince hemen uygula. */
+    static void reapply(Context c) {
+        restore(c);
+        apply(c);
+        Boost.dndOff(c);
+        if (!Boost.prefs(c).getString("dnd_mode", "priority").equals("off")) Boost.dndOn(c);
+    }
+
     static void apply(Context c) {
         SharedPreferences p = Boost.prefs(c);
         if (p.getBoolean("tw_applied", false)) return;
         SharedPreferences.Editor e = p.edit();
-        if (p.getBoolean("anim", true) && secureAllowed(c)) {
+        String anim = p.getString("anim_mode", "0.5");
+        if (!anim.equals("off") && secureAllowed(c)) {
             for (String k : ANIM) {
                 try {
                     e.putString("prev_" + k, String.valueOf(Settings.Global.getFloat(c.getContentResolver(), k, 1f)));
-                    Settings.Global.putFloat(c.getContentResolver(), k, 0.5f);
+                    Settings.Global.putFloat(c.getContentResolver(), k, Float.parseFloat(anim));
                 } catch (Throwable ignored) {}
             }
         }
         if (systemAllowed(c) || secureAllowed(c)) {
-            if (p.getBoolean("hz", true)) {
-                float hz = maxRefresh(c);
+            String hzMode = p.getString("hz_mode", "max");
+            if (!hzMode.equals("off")) {
+                float hz = hzMode.equals("max") ? maxRefresh(c) : Float.parseFloat(hzMode);
                 for (String k : new String[]{"peak_refresh_rate", "min_refresh_rate"}) {
                     try {
                         e.putString("prev_" + k, Settings.System.getString(c.getContentResolver(), k));
