@@ -118,8 +118,67 @@ final class Sh {
         return best;
     }
 
-    /** Son 1 saniyede ekrana basılan kare sayısı; ölçülemezse -1. */
+    /** FPS: önce SurfaceFlinger --latency, olmazsa timestats; ölçülemezse -1. */
     static int fps(String pkg) {
+        int f = fpsLatency(pkg);
+        if (f > 0) return f;
+        int t = fpsTimestats(pkg);
+        return t > 0 ? t : f;
+    }
+
+    static boolean tsEnabled;
+
+    /** Android kare istatistikleri: son temizlemeden bu yana oyunun ortalama FPS'i. */
+    static int fpsTimestats(String pkg) {
+        if (!granted()) return -1;
+        if (!tsEnabled) { exec("dumpsys SurfaceFlinger --timestats -enable"); exec("dumpsys SurfaceFlinger --timestats -clear"); tsEnabled = true; return -1; }
+        String out = exec("dumpsys SurfaceFlinger --timestats -dump; dumpsys SurfaceFlinger --timestats -clear");
+        String cur = "";
+        double best = -1;
+        for (String l : out.split("\n")) {
+            String t = l.trim();
+            if (t.startsWith("layerName")) cur = t;
+            else if (t.startsWith("averageFPS") && cur.contains(pkg)) {
+                try {
+                    double v = Double.parseDouble(t.substring(t.indexOf('=') + 1).trim());
+                    if (v > best) best = v;
+                } catch (Exception ignored) {}
+            }
+        }
+        return best < 0 ? -1 : (int) Math.round(best);
+    }
+
+    static void fpsStop() { if (tsEnabled) { exec("dumpsys SurfaceFlinger --timestats -disable"); tsEnabled = false; } }
+
+    /** Tanılama: oyun katmanları, latency ve timestats çıktılarından kısa özet. */
+    static String fpsDiag(String pkg) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Android ").append(android.os.Build.VERSION.RELEASE).append(" · ").append(android.os.Build.MODEL).append('\n');
+        sb.append("== --list (").append(pkg).append(") ==\n");
+        int n = 0;
+        for (String l : exec("dumpsys SurfaceFlinger --list").split("\n"))
+            if (l.contains(pkg) && n++ < 8) sb.append(l.trim()).append('\n');
+        sb.append("seçilen katman: ").append(layer).append('\n');
+        if (layer != null) {
+            sb.append("== --latency (ilk 4 satır) ==\n");
+            String[] lat = exec("dumpsys SurfaceFlinger --latency '" + layer.replace("'", "'\\''") + "'").split("\n");
+            for (int i = 0; i < Math.min(4, lat.length); i++) sb.append(lat[i]).append('\n');
+        }
+        sb.append("== timestats ==\n");
+        n = 0;
+        String cur = "";
+        for (String l : exec("dumpsys SurfaceFlinger --timestats -dump").split("\n")) {
+            String t = l.trim();
+            if (t.startsWith("layerName")) cur = t;
+            if ((t.startsWith("layerName") || t.startsWith("averageFPS") || t.startsWith("totalFrames")) && cur.contains(pkg) && n++ < 12)
+                sb.append(t).append('\n');
+        }
+        if (n == 0) sb.append("(oyun katmanı yok)\n");
+        return sb.toString();
+    }
+
+    /** Son 1 saniyede ekrana basılan kare sayısı (--latency); ölçülemezse -1. */
+    static int fpsLatency(String pkg) {
         if (!granted()) return -1;
         if (layer == null) layer = findLayer(pkg);
         if (layer == null) return -1;

@@ -44,6 +44,7 @@ public class BoostService extends Service {
     volatile float lastCpu = -1;
     Perf.Session session;
     boolean cooling = false;
+    int fpsFails = 0;
 
     int dp(float v) { return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()); }
 
@@ -85,6 +86,8 @@ public class BoostService extends Service {
         new Thread(() -> {
             while (running) {
                 lastFps = (game != null && Boost.prefs(this).getBoolean("fps", true)) ? Sh.fps(game) : -1;
+                if (lastFps < 0 && Sh.granted() && game != null && ++fpsFails == 15) // ~15 sn ölçülemezse tanılama kaydet
+                    Boost.prefs(this).edit().putString("fps_diag", Sh.fpsDiag(game)).apply();
                 lastCpu = Perf.cpuTemp();
                 try { Thread.sleep(1000); } catch (InterruptedException e) { return; }
             }
@@ -236,6 +239,7 @@ public class BoostService extends Service {
         running = false;
         h.removeCallbacks(tick);
         if (session != null) session.save(this);
+        new Thread(Sh::fpsStop).start();
         getSystemService(NotificationManager.class).cancel(2);
         if (panel != null) try { wm.removeView(panel); } catch (Exception ignored) {}
         Boost.dndOff(this);

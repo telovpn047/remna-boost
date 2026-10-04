@@ -663,6 +663,19 @@ public class MainActivity extends Activity {
         perm("Sistem ayarlarını değiştirme", Tweaks.systemAllowed(this), this::askSystem);
         perm("Kullanım erişimi (oyundan çıkınca otomatik kapanır)", Boost.usageAllowed(this), this::askUsage);
         perm("Shizuku (FPS · otomatik ADB izni)", Sh.granted(), this::askShizuku);
+        String diag = prefs.getString("fps_diag", null);
+        if (diag != null) {
+            LinearLayout l = card();
+            l.addView(text("FPS tanılama kaydı", 14, TX, false), new LinearLayout.LayoutParams(0, -2, 1));
+            l.addView(text("Göster", 13, OR, true));
+            l.setOnClickListener(v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle("FPS tanılama").setMessage(diag)
+                    .setPositiveButton("Kopyala", (d, w) -> {
+                        ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("fps", diag));
+                        toast("Kopyalandı");
+                    }).setNegativeButton("Kapat", null).show());
+            permBox.addView(l, mlp(8));
+        }
         perm("ADB izni (sabit Hz · animasyon)", Tweaks.secureAllowed(this), this::showAdbHelp);
     }
 
