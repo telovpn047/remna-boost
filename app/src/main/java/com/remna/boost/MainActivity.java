@@ -57,7 +57,7 @@ public class MainActivity extends Activity {
     final Handler h = new Handler(Looper.getMainLooper());
     SharedPreferences prefs;
     String game;
-    LinearLayout root, permBox;
+    LinearLayout root, permBox, reportBox;
     TextView ramTv, tempTv, pingTv, gameName, gameSub, btnLabel;
     ImageView gameIcon;
     BigButton big;
@@ -85,9 +85,17 @@ public class MainActivity extends Activity {
         super.onResume();
         pickGame();
         renderPerms();
+        renderReport();
+        if ("com.remna.boost.BOOST".equals(getIntent().getAction())) {
+            getIntent().setAction(null);
+            h.postDelayed(this::boost, 300);
+        }
         h.removeCallbacks(stats);
         h.post(stats);
     }
+
+    @Override
+    protected void onNewIntent(Intent i) { super.onNewIntent(i); setIntent(i); }
 
     @Override
     protected void onPause() { super.onPause(); h.removeCallbacks(stats); }
@@ -192,9 +200,46 @@ public class MainActivity extends Activity {
         });
         root.addView(tc, mlp(12));
 
+        reportBox = new LinearLayout(this);
+        reportBox.setOrientation(LinearLayout.VERTICAL);
+        root.addView(reportBox);
+
+        LinearLayout sc = card();
+        LinearLayout st2 = new LinearLayout(this);
+        st2.setOrientation(LinearLayout.VERTICAL);
+        st2.addView(text("Ana ekrana \"Boost & Oyna\"", 15, TX, true));
+        st2.addView(text("Tek dokunuşla boost edip PUBG'yi açar", 12, TX2, false));
+        sc.addView(st2, new LinearLayout.LayoutParams(0, -2, 1));
+        sc.addView(text("Ekle", 14, OR, true));
+        sc.setOnClickListener(v -> addShortcut());
+        root.addView(sc, mlp(12));
+
         // ayarlar
         root.addView(section("BOOST"));
         root.addView(toggle("Arka plan uygulamalarını kapat", "Boost sırasında RAM boşaltır", "kill", true, null));
+
+        root.addView(section("ANDROID OYUN MODU · SHIZUKU"));
+        root.addView(choice("Oyun modu", "gm_mode", "off",
+                new String[]{"Kapalı", "Standart", "Performans", "Pil tasarrufu"},
+                new String[]{"off", "standard", "performance", "battery"}, this::askShizuku));
+        root.addView(choice("Render çözünürlüğü", "gm_scale", "off",
+                new String[]{"Değiştirme", "%90 (az serin)", "%80 (dengeli)", "%70 (serin)", "%50 (çok serin)"},
+                new String[]{"off", "0.9", "0.8", "0.7", "0.5"}, this::askShizuku), mlp(8));
+        int maxHz = Math.round(Tweaks.maxRefresh(this));
+        java.util.List<String> fl = new java.util.ArrayList<>(), fv = new java.util.ArrayList<>();
+        fl.add("Kapalı"); fv.add("off");
+        int[] opts = maxHz >= 120 ? new int[]{120, 60, 40, 30} : maxHz >= 90 ? new int[]{90, 45, 30} : new int[]{60, 30};
+        for (int o : opts) { fl.add(o + " FPS'e sabitle"); fv.add(String.valueOf(o)); }
+        root.addView(choice("FPS sabitleme (Android)", "gm_fps", "off",
+                fl.toArray(new String[0]), fv.toArray(new String[0]), this::askShizuku), mlp(8));
+        TextView gmNote = text("Oyun dosyalarına dokunmaz, sistem ayarıdır. Değişiklik PUBG kapatılıp açılınca geçerli olur. Oyun kendi Game Mode desteğini bildirmişse etkisi olmayabilir.", 11, TX3, false);
+        gmNote.setPadding(dp(4), dp(8), dp(4), 0);
+        root.addView(gmNote);
+
+        root.addView(section("SOĞUTMA"));
+        root.addView(choice("Isınınca 60 Hz'e düş", "cool_temp", "off",
+                new String[]{"Kapalı", "Pil 40°C olunca", "Pil 42°C olunca", "Pil 45°C olunca"},
+                new String[]{"off", "40", "42", "45"}, null));
 
         root.addView(section("OYUN SIRASINDA"));
         root.addView(choice("Rahatsız etme", "dnd_mode", "priority",
@@ -333,6 +378,97 @@ public class MainActivity extends Activity {
         return l;
     }
 
+    /* ---------------- maç raporu ---------------- */
+    void renderReport() {
+        reportBox.removeAllViews();
+        String js = prefs.getString("last_report", null);
+        if (js == null) return;
+        try {
+            org.json.JSONObject o = new org.json.JSONObject(js);
+            LinearLayout c = card();
+            c.setOrientation(LinearLayout.VERTICAL);
+            c.setGravity(Gravity.START);
+            long min = o.getLong("dur") / 60000;
+            String when = new java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(new java.util.Date(o.getLong("at")));
+            c.addView(text("Son oyun raporu · " + when + " · " + min + " dk", 15, TX, true));
+            StringBuilder sb = new StringBuilder();
+            if (o.has("avgFps")) sb.append("FPS  ort ").append(o.getInt("avgFps")).append("  ·  en düşük %5: ").append(o.getInt("lowFps")).append("  ·  en yüksek ").append(o.getInt("maxFps")).append('\n');
+            if (o.has("avgPing")) sb.append("Ping  ort ").append(o.getInt("avgPing")).append(" ms  ·  en yüksek ").append(o.getInt("maxPing")).append(" ms\n");
+            sb.append(String.format(java.util.Locale.US, "Sıcaklık  pil en yüksek %.0f°C", o.getDouble("maxBatt")));
+            if (o.getDouble("maxCpu") > 0) sb.append(String.format(java.util.Locale.US, "  ·  CPU en yüksek %.0f°C", o.getDouble("maxCpu")));
+            TextView t = text(sb.toString(), 12, TX2, false);
+            t.setPadding(0, dp(6), 0, 0);
+            t.setLineSpacing(dp(2), 1f);
+            c.addView(t);
+            if (o.has("graph")) {
+                org.json.JSONArray g = o.getJSONArray("graph");
+                int[] v = new int[g.length()];
+                for (int i = 0; i < v.length; i++) v[i] = g.getInt(i);
+                Graph gv = new Graph(this, v);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(80));
+                lp.topMargin = dp(10);
+                c.addView(gv, lp);
+            }
+            reportBox.addView(c, mlp(12));
+        } catch (Exception ignored) {}
+    }
+
+    static final class Graph extends View {
+        final int[] v;
+        final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG), fill = new Paint(Paint.ANTI_ALIAS_FLAG), grid = new Paint();
+
+        Graph(Context c, int[] v) {
+            super(c);
+            this.v = v;
+            float d = c.getResources().getDisplayMetrics().density;
+            line.setStyle(Paint.Style.STROKE);
+            line.setStrokeWidth(2 * d);
+            line.setColor(0xFF34D399);
+            line.setStrokeJoin(Paint.Join.ROUND);
+            grid.setColor(0x1AFFFFFF);
+        }
+
+        @Override protected void onDraw(Canvas cv) {
+            if (v.length < 2) return;
+            float w = getWidth(), h = getHeight();
+            int max = 60;
+            for (int x : v) max = Math.max(max, x);
+            for (int k = 1; k < 4; k++) cv.drawLine(0, h * k / 4f, w, h * k / 4f, grid);
+            android.graphics.Path p = new android.graphics.Path(), f = new android.graphics.Path();
+            for (int i = 0; i < v.length; i++) {
+                float x = w * i / (v.length - 1f), y = h - h * v[i] / (float) max;
+                if (i == 0) { p.moveTo(x, y); f.moveTo(x, h); f.lineTo(x, y); } else { p.lineTo(x, y); f.lineTo(x, y); }
+            }
+            f.lineTo(w, h);
+            f.close();
+            fill.setShader(new LinearGradient(0, 0, 0, h, 0x5534D399, 0x0034D399, Shader.TileMode.CLAMP));
+            cv.drawPath(f, fill);
+            cv.drawPath(p, line);
+        }
+    }
+
+    /* ---------------- ana ekran kısayolu ---------------- */
+    void addShortcut() {
+        android.content.pm.ShortcutManager sm = getSystemService(android.content.pm.ShortcutManager.class);
+        if (sm == null || !sm.isRequestPinShortcutSupported()) { toast("Başlatıcı kısayolu desteklemiyor"); return; }
+        Intent i = new Intent(this, MainActivity.class).setAction("com.remna.boost.BOOST")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        android.graphics.drawable.Icon icon = gameIcon.getDrawable() != null
+                ? android.graphics.drawable.Icon.createWithBitmap(toBitmap(gameIcon.getDrawable()))
+                : android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher);
+        android.content.pm.ShortcutInfo info = new android.content.pm.ShortcutInfo.Builder(this, "boost_play")
+                .setShortLabel("Boost & Oyna").setIcon(icon).setIntent(i).build();
+        sm.requestPinShortcut(info, null);
+    }
+
+    static android.graphics.Bitmap toBitmap(Drawable d) {
+        android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(192, 192, android.graphics.Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        d.setBounds(0, 0, 192, 192);
+        d.draw(c);
+        return b;
+    }
+
     /* ---------------- bölge ping testi ---------------- */
     void openRegionTest() {
         LinearLayout box = new LinearLayout(this);
@@ -464,6 +600,7 @@ public class MainActivity extends Activity {
         big.setBusy(true);
         btnLabel.setText("…");
         new Thread(() -> {
+            String gm = Sh.granted() ? Perf.applyGameMode(this, game) : null;
             long before = Boost.availRam(this);
             int killed = prefs.getBoolean("kill", true) ? Boost.killBackground(this, game) : 0;
             try { Thread.sleep(900); } catch (InterruptedException ignored) {}
@@ -471,7 +608,8 @@ public class MainActivity extends Activity {
             h.post(() -> {
                 big.setBusy(false);
                 btnLabel.setText("BOOST");
-                toast(String.format(java.util.Locale.US, "%d uygulama kapatıldı · %d MB boşaldı", killed, freed / 1048576));
+                toast(String.format(java.util.Locale.US, "%d uygulama kapatıldı · %d MB boşaldı", killed, freed / 1048576)
+                        + (gm != null && !gm.equals("kapalı") ? "\nAndroid oyun modu: " + gm : ""));
                 Intent s = new Intent(this, BoostService.class).putExtra("game", game);
                 startForegroundService(s);
                 Intent launch = getPackageManager().getLaunchIntentForPackage(game);

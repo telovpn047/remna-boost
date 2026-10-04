@@ -69,6 +69,7 @@ final class Boost {
             if (ai.packageName.equals(c.getPackageName()) || ai.packageName.equals(keep)) continue;
             try { am.killBackgroundProcesses(ai.packageName); n++; } catch (Throwable ignored) {}
         }
+        if (Sh.granted()) Sh.exec("am kill-all");
         System.gc();
         return n;
     }

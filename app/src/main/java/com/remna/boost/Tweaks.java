@@ -40,6 +40,13 @@ final class Tweaks {
         return new java.util.ArrayList<>(set);
     }
 
+    /** Soğutma modu: yenileme hızını geçici olarak sabitler (oyun modu bitince restore() eski değeri geri yükler). */
+    static void forceHz(Context c, float hz) {
+        for (String k : new String[]{"peak_refresh_rate", "min_refresh_rate"}) {
+            try { Settings.System.putFloat(c.getContentResolver(), k, hz); } catch (Throwable ignored) {}
+        }
+    }
+
     /** Oyun modu açıkken ayar değişince hemen uygula. */
     static void reapply(Context c) {
         restore(c);

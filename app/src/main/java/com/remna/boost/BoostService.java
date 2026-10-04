@@ -41,6 +41,9 @@ public class BoostService extends Service {
     Notification notif;
     volatile int lastPing = -1;
     volatile String pingSrc = "";
+    volatile float lastCpu = -1;
+    Perf.Session session;
+    boolean cooling = false;
 
     int dp(float v) { return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()); }
 
@@ -78,9 +81,11 @@ public class BoostService extends Service {
         h.post(tick);
         new Thread(pinger).start();
         Sh.layer = null;
+        session = new Perf.Session();
         new Thread(() -> {
             while (running) {
                 lastFps = (game != null && Boost.prefs(this).getBoolean("fps", true)) ? Sh.fps(game) : -1;
+                lastCpu = Perf.cpuTemp();
                 try { Thread.sleep(1000); } catch (InterruptedException e) { return; }
             }
         }).start();
@@ -130,8 +135,31 @@ public class BoostService extends Service {
                 pingTv.setTextColor(p < 0 ? 0xFFEF4444 : p < 80 ? 0xFF34D399 : p < 150 ? 0xFFFBBF24 : 0xFFEF4444);
                 ramTv.setText(Boost.fmtGb(Boost.availRam(BoostService.this)));
                 float t = Boost.batteryTemp(BoostService.this);
-                tempTv.setText(String.format(java.util.Locale.US, "%.0f°C", t));
+                float cpu = lastCpu;
+                String chg = Perf.chargeState(BoostService.this);
+                tempTv.setText(String.format(java.util.Locale.US, "%.0f°C", t)
+                        + (cpu > 0 ? String.format(java.util.Locale.US, " · CPU %.0f°", cpu) : "")
+                        + (chg.isEmpty() ? "" : " " + chg));
                 tempTv.setTextColor(t < 38 ? 0xFFFFFFFF : t < 43 ? 0xFFFBBF24 : 0xFFEF4444);
+            }
+            // maç raporu için örnek topla (oyun ön plandayken)
+            float bt = Boost.batteryTemp(BoostService.this);
+            boolean inGame = game == null || !Boost.usageAllowed(BoostService.this)
+                    || game.equals(Boost.lastForeground(BoostService.this, game));
+            if (session != null && inGame) session.add(lastFps, lastPing, bt, lastCpu);
+            // soğutma modu: pil eşiği aşınca 60 Hz'e in, 2° düşünce eski ayara dön
+            String ct = Boost.prefs(BoostService.this).getString("cool_temp", "off");
+            if (!ct.equals("off")) {
+                float thr = Float.parseFloat(ct);
+                if (!cooling && bt >= thr) {
+                    cooling = true;
+                    Tweaks.forceHz(BoostService.this, 60);
+                    notifyCool(bt);
+                } else if (cooling && bt <= thr - 2) {
+                    cooling = false;
+                    Tweaks.reapply(BoostService.this);
+                    getSystemService(NotificationManager.class).cancel(2);
+                }
             }
             // oyundan çıkınca (30 sn) her şeyi geri al
             if (game != null && Boost.usageAllowed(BoostService.this)) {
@@ -147,6 +175,14 @@ public class BoostService extends Service {
             h.postDelayed(this, 2000);
         }
     };
+
+    void notifyCool(float t) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        nm.createNotificationChannel(new NotificationChannel("cool", "Soğutma", NotificationManager.IMPORTANCE_DEFAULT));
+        nm.notify(2, new Notification.Builder(this, "cool").setSmallIcon(R.drawable.ic_stat).setColor(0xFFEF4444)
+                .setContentTitle(String.format(java.util.Locale.US, "Telefon ısındı (%.0f°C)", t))
+                .setContentText("Soğutma modu: ekran 60 Hz'e düşürüldü").setAutoCancel(true).build());
+    }
 
     TextView chip(String s) {
         TextView t = new TextView(this);
@@ -199,6 +235,8 @@ public class BoostService extends Service {
     public void onDestroy() {
         running = false;
         h.removeCallbacks(tick);
+        if (session != null) session.save(this);
+        getSystemService(NotificationManager.class).cancel(2);
         if (panel != null) try { wm.removeView(panel); } catch (Exception ignored) {}
         Boost.dndOff(this);
         Tweaks.restore(this);
