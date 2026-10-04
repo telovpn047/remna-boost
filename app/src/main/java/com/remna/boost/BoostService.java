@@ -38,14 +38,23 @@ public class BoostService extends Service {
     String game;
     long notForegroundSince = 0;
     PowerManager.WakeLock wl;
+    Notification notif;
     volatile int lastPing = -1;
+    volatile String pingSrc = "";
 
     int dp(float v) { return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()); }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
-        game = intent != null ? intent.getStringExtra("game") : null;
+        String g = intent != null ? intent.getStringExtra("game") : null;
+        if (running && notif != null) { // zaten açık: ikinci panel/döngü başlatma
+            if (g != null) game = g;
+            if (Build.VERSION.SDK_INT >= 34) startForeground(1, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            else startForeground(1, notif);
+            return START_NOT_STICKY;
+        }
+        game = g;
         running = true;
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel("boost", "Oyun modu", NotificationManager.IMPORTANCE_LOW));
@@ -56,6 +65,7 @@ public class BoostService extends Service {
                 .setContentTitle("Oyun modu açık").setContentText("Ping ve RAM izleniyor")
                 .setOngoing(true).setContentIntent(open)
                 .addAction(new Notification.Action.Builder(null, "Kapat", stop).build()).build();
+        notif = n;
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(1, n);
 
@@ -80,8 +90,27 @@ public class BoostService extends Service {
     /** Ping ayrı iş parçacığında (ana iş parçacığını bloklamasın). */
     final Runnable pinger = () -> {
         while (running) {
-            String host = Boost.prefs(this).getString("ping_host", MainActivity.REGIONS[0][1]);
-            lastPing = Boost.ping(host, 443);
+            int v = -1;
+            pingSrc = "";
+            // 1) Shizuku varsa: PUBG'nin bağlı olduğu gerçek oyun sunucusuna ICMP ping
+            if (game != null && Sh.granted()) {
+                try {
+                    int uid = getPackageManager().getApplicationInfo(game, 0).uid;
+                    String ip = Sh.gameServer(uid);
+                    if (ip != null) {
+                        int r = Sh.icmp(ip);
+                        // VPN bazen ICMP'yi yerelde yanıtlar (1-3 ms) → güvenilmez
+                        if (r > 5) { v = r; pingSrc = "oyun"; }
+                    }
+                } catch (Exception ignored) {}
+            }
+            // 2) Yedek: seçili bölgeye yaklaşık ölçüm
+            if (v < 0) {
+                String host = Boost.prefs(this).getString("ping_host", MainActivity.REGIONS[0][1]);
+                v = Boost.ping(host, 443);
+                pingSrc = "≈";
+            }
+            lastPing = v;
             try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
         }
     };
@@ -91,11 +120,13 @@ public class BoostService extends Service {
             if (!running) return;
             if (panel != null) {
                 int f = lastFps;
-                fpsTv.setVisibility(f < 0 ? View.GONE : View.VISIBLE);
-                fpsTv.setText(f + " FPS");
-                fpsTv.setTextColor(f >= 55 ? 0xFF34D399 : f >= 30 ? 0xFFFBBF24 : 0xFFEF4444);
+                boolean want = Boost.prefs(BoostService.this).getBoolean("fps", true);
+                fpsTv.setVisibility(want ? View.VISIBLE : View.GONE);
+                if (!Sh.granted()) { fpsTv.setText("FPS: Shizuku yok"); fpsTv.setTextColor(0xFF94A3B8); }
+                else if (f < 0) { fpsTv.setText("— FPS"); fpsTv.setTextColor(0xFF94A3B8); }
+                else { fpsTv.setText(f + " FPS"); fpsTv.setTextColor(f >= 55 ? 0xFF34D399 : f >= 30 ? 0xFFFBBF24 : 0xFFEF4444); }
                 int p = lastPing;
-                pingTv.setText(p < 0 ? "— ms" : p + " ms");
+                pingTv.setText(p < 0 ? "— ms" : ("≈".equals(pingSrc) ? "≈" : "") + p + " ms");
                 pingTv.setTextColor(p < 0 ? 0xFFEF4444 : p < 80 ? 0xFF34D399 : p < 150 ? 0xFFFBBF24 : 0xFFEF4444);
                 ramTv.setText(Boost.fmtGb(Boost.availRam(BoostService.this)));
                 float t = Boost.batteryTemp(BoostService.this);

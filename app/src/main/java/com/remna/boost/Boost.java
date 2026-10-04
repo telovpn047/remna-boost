@@ -102,21 +102,40 @@ final class Boost {
             if (a == null) { a = java.net.InetAddress.getByName(host); DNS.put(host, a); }
             try (Socket s = new Socket()) {
                 s.setTcpNoDelay(true);
-                s.setSoTimeout(3000);
-                s.connect(new InetSocketAddress(a, 80), 3000);
+                s.setSoTimeout(4000);
+                s.connect(new InetSocketAddress(a, 80), 4000);
                 java.io.OutputStream o = s.getOutputStream();
                 java.io.InputStream in = s.getInputStream();
-                byte[] req = ("HEAD / HTTP/1.1\r\nHost: " + host + "\r\nConnection: close\r\n\r\n").getBytes();
+                byte[] req = ("HEAD / HTTP/1.1\r\nHost: " + host + "\r\nConnection: keep-alive\r\n\r\n").getBytes();
+                // 1) ısınma: VPN/proxy uzak bağlantıyı burada kurar; süresi sayılmaz
+                long t0 = System.nanoTime();
+                o.write(req);
+                o.flush();
+                if (!readHeaders(in)) return -1;
+                long first = (System.nanoTime() - t0) / 1_000_000;
+                // 2) asıl ölçüm: aynı bağlantı üzerinde tek gidiş-dönüş
                 long t = System.nanoTime();
                 o.write(req);
                 o.flush();
-                if (in.read() < 0) return -1;
+                if (in.read() < 0) return (int) Math.max(1, first); // sunucu bağlantıyı kapattıysa
                 return (int) Math.max(1, (System.nanoTime() - t) / 1_000_000);
             }
         } catch (Exception e) {
             DNS.remove(host);
             return -1;
         }
+    }
+
+    /** HTTP yanıt başlıklarını sonuna (boş satır) kadar okur. */
+    private static boolean readHeaders(java.io.InputStream in) throws java.io.IOException {
+        int state = 0, b;
+        while ((b = in.read()) >= 0) {
+            if (b == '\r' && (state == 0 || state == 2)) state++;
+            else if (b == '\n' && state == 1) state = 2;
+            else if (b == '\n' && state == 3) return true;
+            else state = 0;
+        }
+        return false;
     }
 
     /* ---------- Rahatsız etme ---------- */
