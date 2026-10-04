@@ -187,7 +187,9 @@ public class MainActivity extends Activity {
         tc.addView(tt, new LinearLayout.LayoutParams(0, -2, 1));
         TextView go = text("Başlat", 14, OR, true);
         tc.addView(go);
-        tc.setOnClickListener(v -> openRegionTest());
+        tc.setOnClickListener(v -> {
+            try { openRegionTest(); } catch (Throwable t) { toast("Test açılamadı: " + t); }
+        });
         root.addView(tc, mlp(12));
 
         // ayarlar

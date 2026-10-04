@@ -169,10 +169,14 @@ final class Boost {
 
     /** Şu an bir VPN üzerinden mi bağlıyız? */
     static boolean vpnActive(Context c) {
-        android.net.ConnectivityManager cm = c.getSystemService(android.net.ConnectivityManager.class);
-        if (cm == null) return false;
-        android.net.NetworkCapabilities nc = cm.getNetworkCapabilities(cm.getActiveNetwork());
-        return nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN);
+        try {
+            android.net.ConnectivityManager cm = c.getSystemService(android.net.ConnectivityManager.class);
+            if (cm == null) return false;
+            android.net.NetworkCapabilities nc = cm.getNetworkCapabilities(cm.getActiveNetwork());
+            return nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN);
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     static String fmtGb(long bytes) { return String.format(java.util.Locale.US, "%.1f GB", bytes / 1073741824.0); }
