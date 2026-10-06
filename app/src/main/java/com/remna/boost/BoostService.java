@@ -33,7 +33,7 @@ public class BoostService extends Service {
     final Handler h = new Handler(Looper.getMainLooper());
     WindowManager wm;
     LinearLayout panel;
-    TextView pingTv, ramTv, tempTv, fpsTv;
+    TextView pingTv, ramTv, tempTv, fpsTv, jitTv, lossTv, cpuTv, ftTv;
     volatile int lastFps = -1;
     String game;
     long notForegroundSince = 0;
@@ -77,18 +77,21 @@ public class BoostService extends Service {
         if (Boost.prefs(this).getBoolean("tw_applied", false)) Tweaks.restore(this); // önceki oturum çöktüyse
         Tweaks.apply(this);
         if (!Boost.prefs(this).getString("dnd_mode", "priority").equals("off")) Boost.dndOn(this);
-        if (!Boost.prefs(this).getString("ov_mode", "full").equals("off") && Settings.canDrawOverlays(this)) showPanel();
+        if (!ovMode().equals("off") && Settings.canDrawOverlays(this)) showPanel();
         // WakeLock yok: oyun ekranı açıkken zaten uyanık; panel ve ölçümler için gerekmez.
         h.post(tick);
         new Thread(pinger).start();
         Sh.layer = null;
         session = new Perf.Session();
+        Live.reset();
         new Thread(() -> {
             while (running) {
                 lastFps = (game != null && Boost.prefs(this).getBoolean("fps", true)) ? Sh.fps(game) : -1;
                 if (lastFps < 0 && Sh.granted() && game != null && ++fpsFails == 8) // ~15 sn ölçülemezse tanılama kaydet
                     Boost.prefs(this).edit().putString("fps_diag", Sh.fpsDiag(game)).apply();
                 lastCpu = Perf.cpuTemp();
+                Live.fps = lastFps;
+                Live.cpu = lastCpu;
                 try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
             }
         }).start();
@@ -151,6 +154,9 @@ public class BoostService extends Service {
                 pingSrc = "≈";
             }
             lastPing = v;
+            Live.ping = v;
+            Live.pingSrc = pingSrc;
+            Live.pushPing(v);
             try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
         }
     };
@@ -158,31 +164,14 @@ public class BoostService extends Service {
     final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!running) return;
-            if (panel != null) {
-                int f = lastFps;
-                boolean want = Boost.prefs(BoostService.this).getBoolean("fps", true) && Sh.granted();
-                fpsTv.setVisibility(want ? View.VISIBLE : View.GONE);
-                if (!Sh.granted()) { fpsTv.setText("FPS: Shizuku yok"); fpsTv.setTextColor(0xFF94A3B8); }
-                else if (f < 0) { fpsTv.setText("— FPS"); fpsTv.setTextColor(0xFF94A3B8); }
-                else { fpsTv.setText(f + " FPS"); fpsTv.setTextColor(f >= 55 ? 0xFF34D399 : f >= 30 ? 0xFFFBBF24 : 0xFFEF4444); }
-                int p = lastPing;
-                String tag = "≈".equals(pingSrc) ? "≈" : "oyun".equals(pingSrc) || pingSrc.isEmpty() ? "" : shortReg(pingSrc) + " ";
-                pingTv.setText(p < 0 ? "— ms" : tag + p + " ms");
-                pingTv.setTextColor(p < 0 ? 0xFFEF4444 : p < 80 ? 0xFF34D399 : p < 150 ? 0xFFFBBF24 : 0xFFEF4444);
-                ramTv.setText(Boost.fmtGb(Boost.availRam(BoostService.this)));
-                float t = Boost.batteryTemp(BoostService.this);
-                float cpu = lastCpu;
-                String chg = Perf.chargeState(BoostService.this);
-                tempTv.setText(String.format(java.util.Locale.US, "%.0f°C", t)
-                        + (cpu > 0 ? String.format(java.util.Locale.US, " · CPU %.0f°", cpu) : "")
-                        + (chg.isEmpty() ? "" : " " + chg));
-                tempTv.setTextColor(t < 38 ? 0xFFFFFFFF : t < 43 ? 0xFFFBBF24 : 0xFFEF4444);
-            }
+            if (panel != null) updatePanel();
             // maç raporu için örnek topla (oyun ön plandayken)
             float bt = Boost.batteryTemp(BoostService.this);
             boolean inGame = game == null || !Boost.usageAllowed(BoostService.this)
                     || game.equals(Boost.lastForeground(BoostService.this, game));
             if (session != null && inGame) session.add(lastFps, lastPing, bt, lastCpu);
+            Live.batt = bt;
+            if (inGame) Live.sample(lastFps, lastPing, bt);
             // termal yönetici: ısınınca kademeli düşür (WARM 90 Hz, HOT/PROTECT 60 Hz), soğuyunca bekleyip yükselt
             Thermal.State ns = thermal.update(BoostService.this, bt);
             if (ns != null) {
@@ -224,6 +213,42 @@ public class BoostService extends Service {
         }
     }
 
+    String ovMode() {
+        String m = Boost.prefs(this).getString("ov_mode", "full");
+        return "ping".equals(m) ? "minimal" : m; // eski sürümden geçiş
+    }
+
+    static final int C_OK = 0xFF35E6A1, C_WARN = 0xFFFFC857, C_BAD = 0xFFFF4D67, C_TX = 0xFFF5F7FA, C_DIM = 0xFF8B95A7;
+
+    void updatePanel() {
+        int f = lastFps;
+        if (f < 0) { fpsTv.setText("— FPS"); fpsTv.setTextColor(C_DIM); ftTv.setText(""); }
+        else {
+            fpsTv.setText(f + " FPS");
+            fpsTv.setTextColor(f >= 55 ? C_OK : f >= 30 ? C_WARN : C_BAD);
+            ftTv.setText(f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "");
+            ftTv.setTextColor(f >= 55 ? C_DIM : C_WARN);
+        }
+        int p = lastPing;
+        String tag = "≈".equals(pingSrc) ? "≈" : "oyun".equals(pingSrc) || pingSrc.isEmpty() ? "" : shortReg(pingSrc) + " ";
+        pingTv.setText(p < 0 ? "— ms" : tag + p + " ms");
+        pingTv.setTextColor(p < 0 ? C_BAD : p < 80 ? C_OK : p < 150 ? C_WARN : C_BAD);
+        PingStats ps = Live.pingStats();
+        jitTv.setText(ps.empty() ? "" : "dalg. " + ps.jitter() + " ms");
+        jitTv.setTextColor(ps.jitter() > 15 ? C_WARN : C_DIM);
+        lossTv.setText(ps.sent == 0 ? "" : "kayıp %" + ps.lossPct());
+        lossTv.setTextColor(ps.lossPct() > 2 ? C_BAD : C_DIM);
+        ramTv.setText(Boost.fmtGb(Boost.availRam(this)));
+        ramTv.setTextColor(C_TX);
+        float cpu = lastCpu;
+        cpuTv.setText(cpu > 0 ? String.format(java.util.Locale.US, "%s %.0f°", Perf.cpuLabel, cpu) : "");
+        cpuTv.setTextColor(cpu < 60 ? C_DIM : cpu < 75 ? C_WARN : C_BAD);
+        float t = Boost.batteryTemp(this);
+        String chg = Perf.chargeState(this);
+        tempTv.setText(String.format(java.util.Locale.US, "Pil %.0f°", t) + (chg.isEmpty() ? "" : " " + chg));
+        tempTv.setTextColor(t < 38 ? C_TX : t < 43 ? C_WARN : C_BAD);
+    }
+
     TextView chip(String s) {
         TextView t = new TextView(this);
         t.setText(s);
@@ -242,15 +267,29 @@ public class BoostService extends Service {
         panel.setPadding(dp(8), dp(5), dp(8), dp(5));
         GradientDrawable g = new GradientDrawable();
         int alpha = Integer.parseInt(Boost.prefs(this).getString("ov_alpha", "70"));
-        g.setColor(((alpha * 255 / 100) << 24) | 0x0B1020);
+        g.setColor(((alpha * 255 / 100) << 24) | 0x070A12);
         g.setCornerRadius(dp(14));
-        g.setStroke(dp(1), 0x33FFFFFF);
+        g.setStroke(dp(1), 0x1FFFFFFF);
         panel.setBackground(g);
         pingTv = chip("…"); ramTv = chip("…"); tempTv = chip("…"); fpsTv = chip("");
-        fpsTv.setVisibility(View.GONE);
-        panel.addView(fpsTv);
-        panel.addView(pingTv);
-        if (Boost.prefs(this).getString("ov_mode", "full").equals("full")) { panel.addView(ramTv); panel.addView(tempTv); }
+        jitTv = chip(""); lossTv = chip(""); cpuTv = chip(""); ftTv = chip("");
+        boolean fpsOk = Sh.granted() && Boost.prefs(this).getBoolean("fps", true);
+        switch (ovMode()) {
+            case "minimal": // 60 FPS • 32 ms
+                if (fpsOk) panel.addView(fpsTv);
+                panel.addView(pingTv);
+                break;
+            case "network": // 32 ms · dalgalanma · kayıp
+                panel.addView(pingTv); panel.addView(jitTv); panel.addView(lossTv);
+                break;
+            case "performance": // FPS · RAM · CPU · pil
+                if (fpsOk) panel.addView(fpsTv);
+                panel.addView(ramTv); panel.addView(cpuTv); panel.addView(tempTv);
+                break;
+            default: // full
+                if (fpsOk) { panel.addView(fpsTv); panel.addView(ftTv); }
+                panel.addView(pingTv); panel.addView(ramTv); panel.addView(cpuTv); panel.addView(tempTv);
+        }
         final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,

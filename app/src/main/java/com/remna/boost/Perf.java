@@ -50,6 +50,8 @@ final class Perf {
     /* ---------------- sıcaklık ---------------- */
 
     static long cpuAt;
+    /** Okunan sensör adında "cpu" varsa "CPU", yoksa genel "Sensör" (yanlış etiketleme yapılmaz). */
+    static volatile String cpuLabel = "CPU";
     static float cpuCache = -1;
 
     /** İşlemci sıcaklığı (°C), Shizuku ile thermal zone'lardan; okunamazsa -1. */
@@ -57,6 +59,7 @@ final class Perf {
         if (System.currentTimeMillis() - cpuAt < 5000) return cpuCache;
         cpuAt = System.currentTimeMillis();
         float best = -1;
+        String bestType = "";
         String out = Sh.granted()
                 ? Sh.exec("for z in /sys/class/thermal/thermal_zone*; do echo \"$(cat $z/type 2>/dev/null):$(cat $z/temp 2>/dev/null)\"; done")
                 : "";
@@ -69,10 +72,11 @@ final class Perf {
             try {
                 float v = Float.parseFloat(l.substring(i + 1).trim());
                 if (v > 1000) v /= 1000f;
-                if (v > 15 && v < 125 && v > best) best = v;
+                if (v > 15 && v < 125 && v > best) { best = v; bestType = type; }
             } catch (NumberFormatException ignored) {}
         }
         cpuCache = best;
+        cpuLabel = bestType.contains("cpu") ? "CPU" : "Sensör";
         return best;
     }
 

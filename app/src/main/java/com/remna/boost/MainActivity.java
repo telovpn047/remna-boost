@@ -40,8 +40,9 @@ import android.widget.Toast;
 import java.util.List;
 
 public class MainActivity extends Activity {
-    static final int BG = 0xFF070B16, CARD = 0x0DFFFFFF, TX = 0xFFF1F5F9, TX2 = 0xFF94A3B8, TX3 = 0xFF64748B;
-    static final int OR = 0xFFF97316, RED = 0xFFE11D48, GREEN = 0xFF34D399;
+    // Remna Boost paleti: turuncu yalnız BOOST, ana eylem ve etkin durum için
+    static final int BG = 0xFF070A12, CARD = 0xFF101522, CARD2 = 0xFF151C2B, TX = 0xFFF5F7FA, TX2 = 0xFF8B95A7, TX3 = 0xFF5B6476;
+    static final int OR = 0xFFFF6B35, RED = 0xFFFF4D67, GREEN = 0xFF35E6A1, YEL = 0xFFFFC857;
     /** PUBG Mobile bölgeleri ve o bölgedeki veri merkezine yakın ölçüm noktaları (AWS S3, HTTP 80). */
     static final String[][] REGIONS = {
             {"Orta Doğu", "s3.me-south-1.amazonaws.com", "Bahreyn"},
@@ -81,6 +82,7 @@ public class MainActivity extends Activity {
             }));
         } catch (Throwable ignored) {}
         setContentView(build());
+        if (!prefs.getBoolean("onboarded", false)) h.post(() -> onboarding(0));
     }
 
     @Override
@@ -130,7 +132,7 @@ public class MainActivity extends Activity {
         l.setOrientation(LinearLayout.HORIZONTAL);
         l.setGravity(Gravity.CENTER_VERTICAL);
         l.setPadding(dp(16), dp(14), dp(16), dp(14));
-        GradientDrawable g = round(CARD, 20); g.setStroke(dp(1), 0x0FFFFFFF);
+        GradientDrawable g = round(CARD, 18); g.setStroke(dp(1), 0x12FFFFFF);
         l.setBackground(g);
         return l;
     }
@@ -148,12 +150,15 @@ public class MainActivity extends Activity {
         return t;
     }
 
-    LinearLayout[] pages = new LinearLayout[3];
-    ScrollView[] scrolls = new ScrollView[3];
-    TextView[] tabs = new TextView[3];
+    static final int TABS = 4;
+    LinearLayout[] pages = new LinearLayout[TABS];
+    ScrollView[] scrolls = new ScrollView[TABS];
+    TextView[] tabs = new TextView[TABS];
     int tab = 0;
-    TextView statusPill;
-    LinearLayout setupBox, profileRow;
+    TextView statusPill, healthScore, healthLabel, healthBody, fpsBig, fpsSub;
+    LinearLayout setupBox, profileRow, healthParts, perfBox;
+    final PingStats homePing = new PingStats();
+    boolean showAdvanced;
 
     LinearLayout newPage(FrameLayout content, int i) {
         ScrollView sv = new ScrollView(this);
@@ -171,91 +176,168 @@ public class MainActivity extends Activity {
 
     void selectTab(int i) {
         tab = i;
-        for (int k = 0; k < 3; k++) {
+        for (int k = 0; k < TABS; k++) {
             scrolls[k].setVisibility(k == i ? View.VISIBLE : View.GONE);
-            tabs[k].setTextColor(k == i ? Color.WHITE : TX3);
-            tabs[k].setBackground(k == i ? round(0x26F97316, 16) : null);
+            tabs[k].setTextColor(k == i ? TX : TX3);
+            tabs[k].setBackground(k == i ? round(CARD2, 14) : null);
         }
+        if (i == 2) renderPerf();
+    }
+
+    /** Büyük sayı + küçük etiket (ana ekran metrikleri). */
+    TextView metric(LinearLayout parent, String label) {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setGravity(Gravity.CENTER);
+        c.setPadding(0, dp(14), 0, dp(12));
+        c.setBackground(round(CARD, 18));
+        TextView v = text("—", 22, TX, true);
+        c.addView(v);
+        TextView l = text(label, 11, TX3, true);
+        l.setLetterSpacing(0.1f);
+        c.addView(l);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+        lp.leftMargin = dp(4); lp.rightMargin = dp(4);
+        parent.addView(c, lp);
+        return v;
+    }
+
+    /** Sağda "›" olan tıklanabilir satır kartı. */
+    LinearLayout navCard(String title, String sub, View.OnClickListener l) {
+        LinearLayout c = card();
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.addView(text(title, 15, TX, true));
+        if (sub != null) t.addView(text(sub, 12, TX2, false));
+        c.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+        c.addView(text("›", 22, TX3, false));
+        c.setOnClickListener(l);
+        return c;
     }
 
     View build() {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(BG);
 
-        // başlık + durum rozeti
+        // başlık
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(18), dp(16), dp(18), dp(10));
+        top.setPadding(dp(18), dp(16), dp(18), dp(8));
         ImageView logo = new ImageView(this);
         logo.setImageDrawable(getApplicationInfo().loadIcon(getPackageManager()));
-        top.addView(logo, new LinearLayout.LayoutParams(dp(34), dp(34)));
-        TextView title = text("Remna Boost", 21, TX, true);
-        title.setPadding(dp(12), 0, 0, 0);
-        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        statusPill = text("…", 12, TX, true);
-        statusPill.setPadding(dp(12), dp(6), dp(12), dp(6));
-        statusPill.setOnClickListener(v -> selectTab(2));
+        top.addView(logo, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        LinearLayout tt = new LinearLayout(this);
+        tt.setOrientation(LinearLayout.VERTICAL);
+        tt.setPadding(dp(12), 0, 0, 0);
+        TextView title = text("REMNA BOOST", 17, TX, true);
+        title.setLetterSpacing(0.08f);
+        tt.addView(title);
+        tt.addView(text("Oyun Performans Merkezi", 11, TX2, false));
+        top.addView(tt, new LinearLayout.LayoutParams(0, -2, 1));
+        statusPill = text("…", 11, TX, true);
+        statusPill.setPadding(dp(10), dp(5), dp(10), dp(5));
+        statusPill.setOnClickListener(v -> openPermissions());
         top.addView(statusPill);
         outer.addView(top);
 
         FrameLayout content = new FrameLayout(this);
         outer.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
-        LinearLayout pGame = newPage(content, 0), pNet = newPage(content, 1), pSet = newPage(content, 2);
+        LinearLayout pHome = newPage(content, 0), pNet = newPage(content, 1), pPerf = newPage(content, 2), pSet = newPage(content, 3);
 
         // alt gezinme
         LinearLayout nav = new LinearLayout(this);
-        nav.setPadding(dp(12), dp(8), dp(12), dp(10));
-        nav.setBackground(round(0xFF0B1124, 0));
-        String[] names = {"⚡  Oyun", "📶  Ağ", "⚙  Ayarlar"};
-        for (int i = 0; i < 3; i++) {
-            TextView t = text(names[i], 14, TX3, true);
+        nav.setPadding(dp(10), dp(8), dp(10), dp(10));
+        nav.setBackgroundColor(0xFF0B0F1A);
+        String[] names = {"ANA", "AĞ", "PERFORMANS", "AYARLAR"};
+        for (int i = 0; i < TABS; i++) {
+            TextView t = text(names[i], 11, TX3, true);
+            t.setLetterSpacing(0.08f);
             t.setGravity(Gravity.CENTER);
-            t.setPadding(0, dp(10), 0, dp(10));
+            t.setPadding(0, dp(11), 0, dp(11));
             final int idx = i;
             t.setOnClickListener(v -> selectTab(idx));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
-            lp.leftMargin = dp(4); lp.rightMargin = dp(4);
+            lp.leftMargin = dp(3); lp.rightMargin = dp(3);
             nav.addView(t, lp);
             tabs[i] = t;
         }
         outer.addView(nav);
 
-        root = pGame;
+        buildHome(pHome);
+        buildNetwork(pNet);
+        buildPerformance(pPerf);
+        buildSettings(pSet);
+        renderProfiles();
+        selectTab(tab);
+        return outer;
+    }
 
-        // oyun kartı
+    /* ================= ANA ================= */
+    void buildHome(LinearLayout p) {
+        root = p;
         LinearLayout gc = card();
         gameIcon = new ImageView(this);
-        gc.addView(gameIcon, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        gc.addView(gameIcon, new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout gt = new LinearLayout(this);
         gt.setOrientation(LinearLayout.VERTICAL);
         gt.setPadding(dp(14), 0, 0, 0);
-        gameName = text("PUBG", 17, TX, true);
-        gameSub = text("", 13, TX2, false);
+        gameName = text("PUBG", 16, TX, true);
+        gameSub = text("", 12, GREEN, true);
         gt.addView(gameName); gt.addView(gameSub);
         gc.addView(gt, new LinearLayout.LayoutParams(0, -2, 1));
         gc.setOnClickListener(v -> chooseGame());
         root.addView(gc, mlp(4));
 
-        // büyük düğme
         FrameLayout bf = new FrameLayout(this);
         big = new BigButton(this);
-        bf.addView(big, new FrameLayout.LayoutParams(dp(230), dp(230), Gravity.CENTER));
+        bf.addView(big, new FrameLayout.LayoutParams(dp(220), dp(220), Gravity.CENTER));
         btnLabel = text("BOOST", 26, Color.WHITE, true);
         btnLabel.setLetterSpacing(0.12f);
         btnLabel.setGravity(Gravity.CENTER);
         bf.addView(btnLabel, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         big.setOnClickListener(v -> boost());
-        root.addView(bf, mlp(18));
+        big.setOnTouchListener((v, e) -> {
+            if (e.getAction() == android.view.MotionEvent.ACTION_DOWN) v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(90).start();
+            else if (e.getAction() == android.view.MotionEvent.ACTION_UP || e.getAction() == android.view.MotionEvent.ACTION_CANCEL)
+                v.animate().scaleX(1f).scaleY(1f).setDuration(140).start();
+            return false;
+        });
+        root.addView(bf, mlp(10));
 
-        // göstergeler
         LinearLayout st = new LinearLayout(this);
-        st.setWeightSum(3);
-        ramTv = stat(st, "Boş RAM");
-        tempTv = stat(st, "Pil sıcaklığı");
-        pingTv = stat(st, "Ping");
-        root.addView(st, mlp(18));
+        fpsBig = metric(st, "FPS");
+        pingTv = metric(st, "PING");
+        tempTv = metric(st, "SICAKLIK");
+        root.addView(st, mlp(8));
+        ramTv = new TextView(this); // RAM ana ekranda değil, sağlık kartında
 
-        root.addView(section("PROFİL"));
+        // Oyun Sağlığı
+        LinearLayout hc = card();
+        hc.setOrientation(LinearLayout.VERTICAL);
+        hc.setGravity(Gravity.START);
+        LinearLayout hr = new LinearLayout(this);
+        hr.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout hl = new LinearLayout(this);
+        hl.setOrientation(LinearLayout.VERTICAL);
+        TextView ht = text("OYUN SAĞLIĞI", 11, TX3, true);
+        ht.setLetterSpacing(0.1f);
+        hl.addView(ht);
+        healthLabel = text("ÖLÇÜLÜYOR", 16, TX, true);
+        hl.addView(healthLabel);
+        hr.addView(hl, new LinearLayout.LayoutParams(0, -2, 1));
+        healthScore = text("—", 34, TX, true);
+        hr.addView(healthScore);
+        hc.addView(hr);
+        healthParts = new LinearLayout(this);
+        hc.addView(healthParts, mlp(10));
+        healthBody = text("", 12, TX2, false);
+        healthBody.setLineSpacing(dp(2), 1f);
+        hc.addView(healthBody, mlp(8));
+        root.addView(hc, mlp(12));
+
+        TextView ps = section("PROFİL");
+        root.addView(ps);
         profileRow = new LinearLayout(this);
         root.addView(profileRow);
 
@@ -263,150 +345,272 @@ public class MainActivity extends Activity {
         setupBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(setupBox);
 
+        root.addView(section("HIZLI ERİŞİM"));
+        LinearLayout qa = new LinearLayout(this);
+        String[][] q = {{"Performans", "2"}, {"Ağ", "1"}, {"Panel", "p"}};
+        for (String[] it : q) {
+            TextView t = text(it[0], 13, TX, true);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, dp(14), 0, dp(14));
+            t.setBackground(round(CARD, 16));
+            t.setOnClickListener(v -> { if ("p".equals(it[1])) chooseOverlayMode(); else selectTab(Integer.parseInt(it[1])); });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            lp.leftMargin = dp(4); lp.rightMargin = dp(4);
+            qa.addView(t, lp);
+        }
+        root.addView(qa);
+    }
+
+    void chooseOverlayMode() {
+        String[] l = {"Kapalı", "Minimal · FPS • ping", "Ağ · ping, dalgalanma, kayıp", "Performans · FPS, RAM, CPU, pil", "Tam · hepsi + kare süresi"};
+        String[] v = {"off", "minimal", "network", "performance", "full"};
+        String cur = prefs.getString("ov_mode", "full");
+        if ("ping".equals(cur)) cur = "minimal";
+        int sel = 0;
+        for (int i = 0; i < v.length; i++) if (v[i].equals(cur)) sel = i;
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Oyun üstü panel")
+                .setSingleChoiceItems(l, sel, (d, w) -> {
+                    prefs.edit().putString("ov_mode", v[w]).apply();
+                    d.dismiss();
+                    if (!v[w].equals("off")) askOverlay();
+                    if (BoostService.running) toast("Panel bir sonraki oyun modunda değişir");
+                }).show();
+    }
+
+    /** Ana ekran: FPS/ping/sıcaklık + sağlık. Oyun modu açıksa canlı veriler, değilse ev ölçümleri. */
+    void renderHome(int homePingMs) {
+        if (homePingMs != Integer.MIN_VALUE) homePing.add(homePingMs);
+        while (homePing.sent > 12) { homePing.sent--; if (!homePing.samples.isEmpty()) homePing.samples.remove(0); }
+        boolean live = BoostService.running;
+        int f = live ? Live.fps : -1;
+        fpsBig.setText(f < 0 ? "—" : String.valueOf(f));
+        fpsBig.setTextColor(f < 0 ? TX3 : f >= 55 ? GREEN : f >= 30 ? YEL : RED);
+        float temp = Boost.batteryTemp(this);
+        tempTv.setText(String.format(java.util.Locale.US, "%.0f°", temp));
+        tempTv.setTextColor(temp < 38 ? TX : temp < 43 ? YEL : RED);
+        PingStats ps = live && Live.pingStats().sent > 0 ? Live.pingStats() : homePing;
+        int pm = ps.median();
+        if (!live && homePingMs != Integer.MIN_VALUE) pm = homePingMs > 0 ? homePingMs : pm;
+        pingTv.setText(pm < 0 ? "—" : String.valueOf(pm));
+        pingTv.setTextColor(pm < 0 ? TX3 : pm < 80 ? GREEN : pm < 150 ? YEL : RED);
+        Health hh = Health.compute(live ? Live.fpsStats() : null, ps, temp, Boost.availRam(this), Boost.totalRam(this));
+        healthScore.setText(hh.total < 0 ? "—" : String.valueOf(hh.total));
+        int col = hh.total < 0 ? TX3 : hh.total >= 75 ? GREEN : hh.total >= 55 ? YEL : RED;
+        healthScore.setTextColor(col);
+        healthLabel.setText(Health.label(hh.total));
+        healthParts.removeAllViews();
+        String[] pl = {"FPS", "AĞ", "ISI", "RAM"};
+        int[] pv = {hh.fps, hh.net, hh.thermal, hh.mem};
+        for (int i = 0; i < 4; i++) {
+            LinearLayout c = new LinearLayout(this);
+            c.setOrientation(LinearLayout.VERTICAL);
+            c.setGravity(Gravity.CENTER);
+            c.setPadding(0, dp(8), 0, dp(8));
+            c.setBackground(round(CARD2, 12));
+            TextView v = text(pv[i] < 0 ? "—" : String.valueOf(pv[i]), 15, pv[i] < 0 ? TX3 : pv[i] >= 75 ? GREEN : pv[i] >= 55 ? YEL : RED, true);
+            c.addView(v);
+            c.addView(text(pl[i], 10, TX3, true));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            lp.leftMargin = dp(3); lp.rightMargin = dp(3);
+            healthParts.addView(c, lp);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String is : hh.issues) sb.append("⚠ ").append(is).append('\n');
+        for (String ok : hh.oks) sb.append("✓ ").append(ok).append('\n');
+        if (hh.fps < 0) sb.append(live ? "FPS ölçülemiyor bu cihazda (Gelişmiş → Shizuku)\n" : "FPS oyun sırasında ölçülür\n");
+        if (hh.rec != null) sb.append("\nÖneri: ").append(hh.rec);
+        healthBody.setText(sb.toString().trim());
+        gameSub.setText(game == null ? "" : live ? "● OYUNDA" : "● HAZIR");
+        gameSub.setTextColor(live ? OR : GREEN);
+    }
+
+    /* ================= AĞ ================= */
+    void buildNetwork(LinearLayout p) {
+        root = p;
+        TextView netNote = text("En düşük ve en stabil mevcut bölgeyi analiz eder. Fiziksel gecikmeyi değiştirmez; doğru sonuç için VPN kapalıyken ölç.", 12, TX2, false);
+        netNote.setPadding(dp(4), dp(4), dp(4), dp(8));
+        root.addView(netNote);
+        root.addView(navCard("Tüm bölgeleri test et", "Ortanca · dalgalanma · kayıp · kararlılık · skor", v -> {
+            try { openRegionTest(); } catch (RuntimeException t) { toast("Test açılamadı: " + t.getMessage()); }
+        }));
+        root.addView(regionRow(), mlp(8));
+        root.addView(section("SUNUCULAR"));
+        LinearLayout sv2 = navCard("Oyun sunucusu", null, v -> openServerInfo());
+        srvSub = text("Maça girince PUBG'nin bağlandığı sunucu burada görünür", 12, TX2, false);
+        ((LinearLayout) sv2.getChildAt(0)).addView(srvSub);
+        root.addView(sv2);
+        LinearLayout hc = navCard("Sunucu geçmişi", null, v -> openServerHistory());
+        histSub = text("Oynadıkça bağlanılan sunucular bu cihazda saklanır", 12, TX2, false);
+        ((LinearLayout) hc.getChildAt(0)).addView(histSub);
+        root.addView(hc, mlp(8));
+    }
+
+    /* ================= PERFORMANS ================= */
+    void buildPerformance(LinearLayout p) {
+        root = p;
+        perfBox = new LinearLayout(this);
+        perfBox.setOrientation(LinearLayout.VERTICAL);
+        root.addView(perfBox);
         reportBox = new LinearLayout(this);
         reportBox.setOrientation(LinearLayout.VERTICAL);
+        root.addView(section("SON OTURUM RAPORU"));
         root.addView(reportBox);
+    }
 
-        root = pNet;
-        TextView netNote = text("PUBG'nin bağlandığı sunucuları ve bölgelerin gerçek pingini ölç. Doğru sonuç için VPN kapalıyken analiz et.", 12, TX2, false);
-        netNote.setPadding(dp(4), dp(4), dp(4), dp(4));
-        root.addView(netNote);
+    LinearLayout statGrid(String[][] cells) {
+        LinearLayout row = new LinearLayout(this);
+        for (String[] c : cells) {
+            LinearLayout b = new LinearLayout(this);
+            b.setOrientation(LinearLayout.VERTICAL);
+            b.setPadding(dp(12), dp(10), dp(8), dp(10));
+            b.setBackground(round(CARD, 14));
+            TextView l = text(c[0], 10, TX3, true);
+            l.setLetterSpacing(0.08f);
+            b.addView(l);
+            b.addView(text(c[1], 17, TX, true));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            lp.leftMargin = dp(3); lp.rightMargin = dp(3);
+            row.addView(b, lp);
+        }
+        return row;
+    }
 
-        LinearLayout tc = card();
-        LinearLayout tt = new LinearLayout(this);
-        tt.setOrientation(LinearLayout.VERTICAL);
-        tt.addView(text("Sunucu ping testi", 15, TX, true));
-        tt.addView(text("Tüm PUBG bölgelerini ölç, en iyisini bul", 12, TX2, false));
-        tc.addView(tt, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView go = text("Başlat", 14, OR, true);
-        tc.addView(go);
-        tc.setOnClickListener(v -> {
-            try { openRegionTest(); } catch (Throwable t) { toast("Test açılamadı: " + t); }
-        });
-        root.addView(tc, mlp(8));
+    View graphCard(String title, int[] v, int color, String unit) {
+        LinearLayout c = card();
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setGravity(Gravity.START);
+        int last = -1;
+        for (int i = v.length - 1; i >= 0; i--) if (v[i] > 0) { last = v[i]; break; }
+        c.addView(text(title + (last > 0 ? "  ·  " + last + " " + unit : ""), 12, TX2, true));
+        int[] clean = new int[v.length];
+        for (int i = 0; i < v.length; i++) clean[i] = Math.max(0, v[i]);
+        Graph g = new Graph(this, clean);
+        g.line.setColor(color);
+        g.fillColor = color;
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(70));
+        lp.topMargin = dp(8);
+        c.addView(g, lp);
+        return c;
+    }
 
-        LinearLayout sv2 = card();
-        LinearLayout st3 = new LinearLayout(this);
-        st3.setOrientation(LinearLayout.VERTICAL);
-        st3.addView(text("Oyun sunucusu", 15, TX, true));
-        srvSub = text("Maça girince PUBG'nin bağlandığı sunucu burada görünür", 12, TX2, false);
-        st3.addView(srvSub);
-        sv2.addView(st3, new LinearLayout.LayoutParams(0, -2, 1));
-        sv2.addView(text("Analiz", 14, OR, true));
-        sv2.setOnClickListener(v -> openServerInfo());
-        root.addView(sv2, mlp(12));
+    void renderPerf() {
+        if (perfBox == null) return;
+        perfBox.removeAllViews();
+        boolean live = BoostService.running;
+        TextView hdr = text(live ? "CANLI · oyun modu açık" : "Oyun modu kapalı · son oturum verileri", 12, live ? OR : TX2, true);
+        hdr.setPadding(dp(4), dp(4), 0, dp(6));
+        perfBox.addView(hdr);
+        int[] fs = Live.fpsStats();
+        int f = Live.fps;
+        perfBox.addView(statGrid(new String[][]{
+                {"FPS", live && f >= 0 ? String.valueOf(f) : fs == null ? "Yok" : "—"},
+                {"ORT", fs == null ? "—" : String.valueOf(fs[0])},
+                {"%1 DÜŞÜK", fs == null ? "—" : String.valueOf(fs[1])},
+                {"KARE", live && f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "—"}}));
+        if (fs == null) {
+            TextView n = text(Sh.granted() ? "FPS bu oturumda ölçülemedi." : "FPS ölçümü bu cihazda kullanılamıyor (Gelişmiş → Shizuku).", 11, TX3, false);
+            n.setPadding(dp(4), dp(6), 0, 0);
+            perfBox.addView(n);
+        }
+        long tot = Boost.totalRam(this), av = Boost.availRam(this);
+        android.content.Intent bi = registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        int lvl = bi == null ? -1 : bi.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+        float cpu = live ? Live.cpu : -1;
+        LinearLayout g2 = statGrid(new String[][]{
+                {"RAM", Boost.fmtGb(tot - av).replace(" GB", "") + " / " + Boost.fmtGb(tot)},
+                {"PİL", String.format(java.util.Locale.US, "%.0f°C · %%%d", Boost.batteryTemp(this), lvl)},
+                {Perf.cpuLabel.toUpperCase(), cpu > 0 ? String.format(java.util.Locale.US, "%.0f°C", cpu) : "—"}});
+        perfBox.addView(g2, mlp(8));
+        int[] fps = Live.fpsSeries(), pg = Live.pingSeries(), tp = Live.tempSeries();
+        if (fps.length > 1) {
+            boolean anyFps = false;
+            for (int x : fps) if (x > 0) { anyFps = true; break; }
+            if (anyFps) perfBox.addView(graphCard("FPS", fps, GREEN, ""), mlp(10));
+            perfBox.addView(graphCard("PING", pg, 0xFF6EA8FE, "ms"), mlp(8));
+            perfBox.addView(graphCard("SICAKLIK", tp, YEL, "°C"), mlp(8));
+        } else {
+            TextView n = text("Grafikler oyun modu açıkken oluşur ve yalnız bellekte tutulur.", 11, TX3, false);
+            n.setPadding(dp(4), dp(10), 0, 0);
+            perfBox.addView(n);
+        }
+    }
 
-        LinearLayout hc = card();
-        LinearLayout ht = new LinearLayout(this);
-        ht.setOrientation(LinearLayout.VERTICAL);
-        ht.addView(text("Sunucu geçmişi · en iyi bölge", 15, TX, true));
-        histSub = text("Oynadıkça PUBG'nin bağlandığı tüm sunucular toplanır", 12, TX2, false);
-        ht.addView(histSub);
-        hc.addView(ht, new LinearLayout.LayoutParams(0, -2, 1));
-        hc.addView(text("Analiz", 14, OR, true));
-        hc.setOnClickListener(v -> openServerHistory());
-        root.addView(hc, mlp(12));
-        root.addView(regionRow(), mlp(12));
-
-        root = pSet;
-        LinearLayout sc = card();
-        LinearLayout st2 = new LinearLayout(this);
-        st2.setOrientation(LinearLayout.VERTICAL);
-        st2.addView(text("Ana ekrana \"Boost & Oyna\"", 15, TX, true));
-        st2.addView(text("Tek dokunuşla boost edip PUBG'yi açar", 12, TX2, false));
-        sc.addView(st2, new LinearLayout.LayoutParams(0, -2, 1));
-        sc.addView(text("Ekle", 14, OR, true));
-        sc.setOnClickListener(v -> addShortcut());
-        root.addView(sc, mlp(4));
-
-        // ayarlar
-        root.addView(section("BOOST"));
+    /* ================= AYARLAR ================= */
+    void buildSettings(LinearLayout p) {
+        root = p;
+        root.addView(section("PERFORMANS"));
+        java.util.List<Integer> rates = Tweaks.refreshRates(this);
+        String[] hzL = new String[rates.size() + 2], hzV = new String[rates.size() + 2];
+        hzL[0] = "Otomatik (sistem yönetsin)"; hzV[0] = "off";
+        hzL[1] = "En yüksek (" + Math.round(Tweaks.maxRefresh(this)) + " Hz)"; hzV[1] = "max";
+        for (int i = 0; i < rates.size(); i++) { hzL[i + 2] = rates.get(i) + " Hz"; hzV[i + 2] = String.valueOf(rates.get(i)); }
+        root.addView(choice("Yenileme hızı", "hz_mode", "max", hzL, hzV, this::askAdb));
         root.addView(choice("Arka plan temizliği", "cleanup", "smart",
                 new String[]{"Akıllı (yalnız RAM azsa)", "Agresif (her zaman)", "Kapalı"},
-                new String[]{"smart", "aggressive", "off"}, null));
-
-        root.addView(section("ANDROID OYUN MODU · SHIZUKU"));
-        root.addView(choice("Oyun modu", "gm_mode", "off",
-                new String[]{"Kapalı", "Standart", "Performans", "Pil tasarrufu"},
-                new String[]{"off", "standard", "performance", "battery"}, this::askShizuku));
-        root.addView(choice("Render çözünürlüğü", "gm_scale", "off",
-                new String[]{"Değiştirme", "%90 (az serin)", "%80 (dengeli)", "%70 (serin)", "%50 (çok serin)"},
-                new String[]{"off", "0.9", "0.8", "0.7", "0.5"}, this::askShizuku), mlp(8));
-        int maxHz = Math.round(Tweaks.maxRefresh(this));
-        java.util.List<String> fl = new java.util.ArrayList<>(), fv = new java.util.ArrayList<>();
-        fl.add("Kapalı"); fv.add("off");
-        int[] opts = maxHz >= 120 ? new int[]{120, 60, 40, 30} : maxHz >= 90 ? new int[]{90, 45, 30} : new int[]{60, 30};
-        for (int o : opts) { fl.add(o + " FPS'e sabitle"); fv.add(String.valueOf(o)); }
-        root.addView(choice("FPS sabitleme (Android)", "gm_fps", "off",
-                fl.toArray(new String[0]), fv.toArray(new String[0]), this::askShizuku), mlp(8));
-        TextView gmNote = text("Oyun dosyalarına dokunmaz, sistem ayarıdır. Değişiklik PUBG kapatılıp açılınca geçerli olur. Oyun kendi Game Mode desteğini bildirmişse etkisi olmayabilir.", 11, TX3, false);
-        gmNote.setPadding(dp(4), dp(8), dp(4), 0);
-        root.addView(gmNote);
-
-        root.addView(section("TERMAL KORUMA"));
+                new String[]{"smart", "aggressive", "off"}, null), mlp(8));
         root.addView(choice("Termal koruma", "thermal", "standard",
-                new String[]{"Standart · 40°C ılık (90 Hz) · 42°C sıcak (60 Hz) · 44°C koruma", "Hassas · 38 / 40 / 42°C", "Kapalı"},
-                new String[]{"standard", "sensitive", "off"}, null));
-        TextView thNote = text("Isınınca ekran hemen düşürülür; soğuyunca 1 dakika beklenip birer kademe geri yükseltilir. Oyun bitince orijinal ayarlar geri yüklenir.", 11, TX3, false);
-        thNote.setPadding(dp(4), dp(8), dp(4), 0);
-        root.addView(thNote);
+                new String[]{"Standart · 40 / 42 / 44°C", "Hassas · 38 / 40 / 42°C", "Kapalı"},
+                new String[]{"standard", "sensitive", "off"}, null), mlp(8));
+        boolean ts = Tweaks.touchSupported(this);
+        root.addView(toggle("Dokunma optimizasyonu", ts ? "Ekran dokunuşlara daha hızlı tepki verir" : "Bu cihazda desteklenmiyor",
+                "touch", true, this::askAdb), mlp(8));
+        root.addView(toggle("Otomatik parlaklığı kapat", "Oyunda parlaklık zıplamaz", "autobright", true, this::askSystem), mlp(8));
 
         root.addView(section("OYUN SIRASINDA"));
         root.addView(choice("Rahatsız etme", "dnd_mode", "priority",
-                new String[]{"Kapalı", "Öncelikli (aramalar önemli kişilerden)", "Sadece alarmlar", "Tam sessiz"},
+                new String[]{"Kapalı", "Öncelikli", "Sadece alarmlar", "Tam sessiz"},
                 new String[]{"off", "priority", "alarms", "none"}, this::askDnd));
-        java.util.List<Integer> rates = Tweaks.refreshRates(this);
-        String[] hzL = new String[rates.size() + 2], hzV = new String[rates.size() + 2];
-        hzL[0] = "Kapalı (sistem yönetsin)"; hzV[0] = "off";
-        hzL[1] = "En yüksek (" + Math.round(Tweaks.maxRefresh(this)) + " Hz)"; hzV[1] = "max";
-        for (int i = 0; i < rates.size(); i++) { hzL[i + 2] = "Sabit " + rates.get(i) + " Hz"; hzV[i + 2] = String.valueOf(rates.get(i)); }
-        root.addView(choice("Sabit yenileme hızı (FPS sınırı)", "hz_mode", "max", hzL, hzV, this::askAdb), mlp(8));
-        root.addView(choice("Animasyon hızı", "anim_mode", "0.5",
-                new String[]{"Değiştirme", "Hızlı (0.5x)", "Kapalı (0x)"}, new String[]{"off", "0.5", "0"}, this::askAdb), mlp(8));
-        root.addView(toggle("Otomatik parlaklığı kapat", "Oyunda parlaklık zıplamaz", "autobright", true, this::askSystem), mlp(8));
-        boolean ts = Tweaks.touchSupported(this);
-        root.addView(toggle("Dokunma hassasiyeti", ts ? "Ekran dokunuşlara daha hızlı tepki verir · Samsung" : "Bu telefonda Samsung ayarı bulunamadı",
-                "touch", true, this::askAdb), mlp(8));
-
-        root.addView(section("OYUN ÜSTÜ PANEL"));
-        root.addView(toggle("FPS göstergesi", "Oyunun gerçek FPS'i · Shizuku gerekir", "fps", true, this::askShizuku));
-        root.addView(choice("Panel", "ov_mode", "full",
-                new String[]{"Kapalı", "FPS · ping", "FPS · ping · RAM · sıcaklık"}, new String[]{"off", "ping", "full"}, this::askOverlay), mlp(8));
+        root.addView(navCard("Oyun üstü panel", null, v -> chooseOverlayMode()), mlp(8));
         root.addView(choice("Panel boyutu", "ov_size", "normal",
                 new String[]{"Küçük", "Normal", "Büyük"}, new String[]{"small", "normal", "large"}, null), mlp(8));
         root.addView(choice("Panel saydamlığı", "ov_alpha", "70",
                 new String[]{"%30", "%50", "%70", "%90"}, new String[]{"30", "50", "70", "90"}, null), mlp(8));
-
-        root.addView(section("OTOMATİK"));
         root.addView(choice("Oyundan çıkınca kapat", "autostop", "30",
-                new String[]{"Kapalı (elle kapat)", "15 sn sonra", "30 sn sonra", "60 sn sonra"}, new String[]{"0", "15", "30", "60"}, this::askUsage));
+                new String[]{"Kapalı (elle kapat)", "15 sn sonra", "30 sn sonra", "60 sn sonra"}, new String[]{"0", "15", "30", "60"}, this::askUsage), mlp(8));
 
-        root.addView(section("GİZLİLİK"));
-        root.addView(toggle("Sunucu geçmişi kaydı", "PUBG'nin bağlandığı sunucu IP'leri yalnız bu cihazda saklanır", "srv_record", true, null));
-        root.addView(toggle("Çevrimiçi konum sorgusu", "Bilinmeyen IP'ler ipwho.is'e (HTTPS) gönderilir · varsayılan kapalı", "geo_online", false, null), mlp(8));
-        LinearLayout clr = card();
-        clr.addView(text("Sunucu geçmişini temizle", 15, TX, true), new LinearLayout.LayoutParams(0, -2, 1));
-        clr.addView(text("Temizle", 14, RED, true));
-        clr.setOnClickListener(v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Sunucu geçmişi silinsin mi?").setMessage("Kayıtlı tüm sunucu IP'leri, konumlar ve ölçümler silinir.")
-                .setPositiveButton("Sil", (d, w) -> { ServerLog.clear(this); histSub.setText("Kayıtlar silindi"); toast("Sunucu geçmişi silindi"); })
-                .setNegativeButton("Vazgeç", null).show());
-        root.addView(clr, mlp(8));
-        TextView pv = text("Konum bilgisi önce uygulamanın içindeki tablodan bulunur; dışarıya veri gönderilmez. Çevrimiçi sorgu yalnız siz açarsanız yapılır.", 11, TX3, false);
-        pv.setPadding(dp(4), dp(8), dp(4), 0);
-        root.addView(pv);
+        root.addView(section("UYGULAMA"));
+        root.addView(navCard("İzinler", "Hangi izin ne için kullanılır", v -> openPermissions()));
+        root.addView(navCard("Gizlilik", "Sunucu geçmişi, konum sorgusu, veri silme", v -> openPrivacy()), mlp(8));
+        root.addView(navCard("Tanılama", "Sistem durumu ve kopyalanabilir rapor", v -> openDiagnostics()), mlp(8));
+        LinearLayout sc = navCard("Ana ekrana \"Boost & Oyna\"", "Tek dokunuşla boost edip oyunu açar", v -> addShortcut());
+        root.addView(sc, mlp(8));
 
-        root.addView(section("İZİNLER"));
-        permBox = new LinearLayout(this);
-        permBox.setOrientation(LinearLayout.VERTICAL);
-        root.addView(permBox);
+        TextView adv = text(showAdvanced ? "GELİŞMİŞ  ▾" : "GELİŞMİŞ  ▸", 12, TX3, true);
+        adv.setLetterSpacing(0.08f);
+        adv.setPadding(dp(4), dp(22), dp(4), dp(8));
+        adv.setOnClickListener(v -> {
+            showAdvanced = !showAdvanced;
+            int y = scrolls[3].getScrollY();
+            setContentView(build());
+            refresh();
+            scrolls[3].post(() -> scrolls[3].scrollTo(0, y));
+        });
+        root.addView(adv);
+        if (showAdvanced) {
+            TextView an = text("Shizuku gerektiren sistem seviyesi ayarlar. Normal kullanım için gerekmez.", 11, TX3, false);
+            an.setPadding(dp(4), 0, dp(4), dp(8));
+            root.addView(an);
+            root.addView(choice("Android oyun modu", "gm_mode", "off",
+                    new String[]{"Kapalı", "Standart", "Performans", "Pil tasarrufu"},
+                    new String[]{"off", "standard", "performance", "battery"}, this::askShizuku));
+            root.addView(choice("Render çözünürlüğü", "gm_scale", "off",
+                    new String[]{"Değiştirme", "%90", "%80", "%70", "%50"},
+                    new String[]{"off", "0.9", "0.8", "0.7", "0.5"}, this::askShizuku), mlp(8));
+            int maxHz = Math.round(Tweaks.maxRefresh(this));
+            java.util.List<String> fl = new java.util.ArrayList<>(), fv = new java.util.ArrayList<>();
+            fl.add("Kapalı"); fv.add("off");
+            int[] opts = maxHz >= 120 ? new int[]{120, 60, 40, 30} : maxHz >= 90 ? new int[]{90, 45, 30} : new int[]{60, 30};
+            for (int o : opts) { fl.add(o + " FPS'e sabitle"); fv.add(String.valueOf(o)); }
+            root.addView(choice("FPS sabitleme", "gm_fps", "off", fl.toArray(new String[0]), fv.toArray(new String[0]), this::askShizuku), mlp(8));
+            root.addView(choice("Animasyon hızı", "anim_mode", "0.5",
+                    new String[]{"Değiştirme", "Hızlı (0.5x)", "Kapalı (0x)"}, new String[]{"off", "0.5", "0"}, this::askAdb), mlp(8));
+            root.addView(toggle("FPS ölçümü", "SurfaceFlinger üzerinden · Shizuku", "fps", true, this::askShizuku), mlp(8));
+            permBox = new LinearLayout(this); // eski izin listesi tanılamaya taşındı
+        } else permBox = new LinearLayout(this);
 
-        TextView note = text("Not: Root olmadan oyunun FPS'i doğrudan artırılamaz. Remna Boost RAM boşaltır, kesintileri engeller, ekranı en yüksek yenileme hızına sabitler ve oyun sırasında ping/sıcaklığı gösterir. Oyun dosyalarına dokunmaz (ban riski yok).", 12, TX3, false);
+        TextView note = text("Remna Boost oyun dosyalarına dokunmaz. FPS'i sihirli şekilde artırmaz; ölçer, kesintileri engeller, ısınmayı yönetir ve değiştirdiği her ayarı oyun bitince geri yükler.", 11, TX3, false);
         note.setPadding(dp(4), dp(18), dp(4), 0);
         root.addView(note);
-        renderProfiles();
-        selectTab(tab);
-        return outer;
     }
 
     /* ---------------- profiller ---------------- */
@@ -478,9 +682,9 @@ public class MainActivity extends Activity {
         if (!Boost.usageAllowed(this)) miss.add("Kullanım erişimi (otomatik kapanma, rapor)");
         if (!Boost.dndAllowed(this) && !"off".equals(prefs.getString("dnd_mode", "priority"))) miss.add("Rahatsız etme erişimi");
         boolean ok = miss.isEmpty();
-        statusPill.setText(ok ? "● Hazır" : "● Kurulum " + miss.size());
+        statusPill.setText(ok ? "● HAZIR" : "● KURULUM " + miss.size());
         statusPill.setTextColor(ok ? GREEN : OR);
-        statusPill.setBackground(round(ok ? 0x1A34D399 : 0x1AF97316, 14));
+        statusPill.setBackground(round(ok ? 0x1A35E6A1 : 0x1AFF6B35, 14));
         if (ok) {
             if (!Sh.granted()) {
                 LinearLayout p = card();
@@ -509,10 +713,7 @@ public class MainActivity extends Activity {
         TextView go = text("İzinlere git ›", 13, OR, true);
         go.setPadding(0, dp(8), 0, 0);
         c.addView(go);
-        c.setOnClickListener(v -> {
-            selectTab(2);
-            scrolls[2].post(() -> scrolls[2].scrollTo(0, permBox.getTop()));
-        });
+        c.setOnClickListener(v -> openPermissions());
         setupBox.addView(c, mlp(12));
     }
 
@@ -557,7 +758,7 @@ public class MainActivity extends Activity {
         LinearLayout t = new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
         t.addView(text(title, 15, TX, true));
-        TextView sub = text(labelOf(key, def, labels, values), 12, OR, false);
+        TextView sub = text(labelOf(key, def, labels, values), 12, TX2, false);
         t.addView(sub);
         l.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
         l.addView(text("›", 22, TX3, false));
@@ -599,7 +800,7 @@ public class MainActivity extends Activity {
     void markCustom() {
         if (!"custom".equals(prefs.getString("profile", "custom"))) {
             prefs.edit().putString("profile", "custom").apply();
-            profileRow.post(() -> { int y = scrolls[2].getScrollY(); setContentView(build()); refresh(); scrolls[2].post(() -> scrolls[2].scrollTo(0, y)); });
+            profileRow.post(() -> { int y = scrolls[3].getScrollY(); setContentView(build()); refresh(); scrolls[3].post(() -> scrolls[3].scrollTo(0, y)); });
         }
     }
 
@@ -815,6 +1016,7 @@ public class MainActivity extends Activity {
     static final class Graph extends View {
         final int[] v;
         final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG), fill = new Paint(Paint.ANTI_ALIAS_FLAG), grid = new Paint();
+        int fillColor = 0xFF35E6A1;
 
         Graph(Context c, int[] v) {
             super(c);
@@ -822,7 +1024,7 @@ public class MainActivity extends Activity {
             float d = c.getResources().getDisplayMetrics().density;
             line.setStyle(Paint.Style.STROKE);
             line.setStrokeWidth(2 * d);
-            line.setColor(0xFF34D399);
+            line.setColor(0xFF35E6A1);
             line.setStrokeJoin(Paint.Join.ROUND);
             grid.setColor(0x1AFFFFFF);
         }
@@ -830,8 +1032,9 @@ public class MainActivity extends Activity {
         @Override protected void onDraw(Canvas cv) {
             if (v.length < 2) return;
             float w = getWidth(), h = getHeight();
-            int max = 60;
+            int max = 10;
             for (int x : v) max = Math.max(max, x);
+            max = max + max / 8;
             for (int k = 1; k < 4; k++) cv.drawLine(0, h * k / 4f, w, h * k / 4f, grid);
             android.graphics.Path p = new android.graphics.Path(), f = new android.graphics.Path();
             for (int i = 0; i < v.length; i++) {
@@ -840,7 +1043,8 @@ public class MainActivity extends Activity {
             }
             f.lineTo(w, h);
             f.close();
-            fill.setShader(new LinearGradient(0, 0, 0, h, 0x5534D399, 0x0034D399, Shader.TileMode.CLAMP));
+            int rgb = fillColor & 0x00FFFFFF;
+            fill.setShader(new LinearGradient(0, 0, 0, h, 0x44000000 | rgb, rgb, Shader.TileMode.CLAMP));
             cv.drawPath(f, fill);
             cv.drawPath(p, line);
         }
@@ -932,7 +1136,7 @@ public class MainActivity extends Activity {
                         int sc = ps.score();
                         res[idx].setText("skor " + sc + "  ·  " + ps.summary() + (target != null ? "\nYöntem: PUBG SUNUCUSU (ICMP)" : "\nYöntem: TAHMİNİ (HTTP)"));
                         int m = ps.median();
-                        res[idx].setTextColor(m < 80 ? GREEN : m < 150 ? 0xFFFBBF24 : RED);
+                        res[idx].setTextColor(m < 80 ? GREEN : m < 150 ? YEL : RED);
                         best[idx] = target != null ? sc : sc / 2; // tahmini ölçümler öneride geri planda
                     }
                     done[0]++;
@@ -1048,7 +1252,9 @@ public class MainActivity extends Activity {
             final int fPing = ping;
             h.post(() -> {
                 big.setBusy(false);
-                btnLabel.setText("BOOST");
+                big.success();
+                btnLabel.setTextSize(26);
+                btnLabel.setText("✓");
                 Intent sv = new Intent(this, BoostService.class).putExtra("game", game);
                 startForegroundService(sv);
                 showBoostResult(done, skipped, fPing, temp);
@@ -1085,26 +1291,253 @@ public class MainActivity extends Activity {
 
     final Runnable stats = new Runnable() {
         @Override public void run() {
-            long a = Boost.availRam(MainActivity.this), t = Boost.totalRam(MainActivity.this);
-            ramTv.setText(Boost.fmtGb(a));
-            ramTv.setTextColor(a * 100 / Math.max(1, t) > 25 ? GREEN : OR);
-            float temp = Boost.batteryTemp(MainActivity.this);
-            tempTv.setText(String.format(java.util.Locale.US, "%.0f°C", temp));
-            tempTv.setTextColor(temp < 38 ? TX : temp < 43 ? 0xFFFBBF24 : RED);
             String reg = regionOfHost(prefs.getString("ping_host", ""));
             new Thread(() -> {
                 int p = -1;
-                for (String ip : Boost.dcFor(MainActivity.this, reg == null ? "Avrupa" : reg)) { p = Boost.icmp(ip); if (p > 0) break; }
-                final int fp = p;
-                h.post(() -> {
-                    pingTv.setText(fp < 0 ? "—" : fp + " ms");
-                    pingTv.setTextColor(fp < 0 ? RED : fp < 80 ? GREEN : fp < 150 ? 0xFFFBBF24 : RED);
-                });
+                if (!BoostService.running) // oyunda ölçümü servis yapar; çift ölçüm yok
+                    for (String ip : Boost.dcFor(MainActivity.this, reg == null ? "Avrupa" : reg)) { p = Boost.icmp(ip); if (p > 0) break; }
+                final int fp = BoostService.running ? Integer.MIN_VALUE : p;
+                h.post(() -> { if (fpsBig != null) renderHome(fp); if (tab == 2) renderPerf(); });
             }).start();
             if (!big.busy) { btnLabel.setTextSize(26); btnLabel.setText(BoostService.running ? "OYUNDA" : "BOOST"); }
             h.postDelayed(this, 3000);
         }
     };
+
+    /* ---------------- tam ekran sayfa (izinler, gizlilik, tanılama) ---------------- */
+    LinearLayout sheet(String title, java.util.function.Consumer<LinearLayout> fill) {
+        android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(BG);
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(10), dp(14), dp(18), dp(10));
+        TextView back = text("‹", 30, TX, false);
+        back.setPadding(dp(10), 0, dp(14), dp(4));
+        back.setOnClickListener(v -> d.dismiss());
+        bar.addView(back);
+        TextView t = text(title, 18, TX, true);
+        t.setLetterSpacing(0.05f);
+        bar.addView(t);
+        outer.addView(bar);
+        ScrollView sv = new ScrollView(this);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(18), dp(4), dp(18), dp(28));
+        sv.addView(body);
+        outer.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1));
+        fill.accept(body);
+        d.setContentView(outer);
+        d.setOnDismissListener(x -> refresh());
+        d.show();
+        return body;
+    }
+
+    /** İzin kartı: ad, durum, gerekli/isteğe bağlı, ne için kullanıldığı, etkinleştir düğmesi. */
+    View permCard(String name, boolean ok, boolean required, String why, Runnable enable) {
+        LinearLayout c = card();
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setGravity(Gravity.START);
+        LinearLayout r = new LinearLayout(this);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.addView(text(name, 15, TX, true), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView st = text(ok ? "✓ AÇIK" : required ? "✕ KAPALI" : "○ İSTEĞE BAĞLI", 11, ok ? GREEN : required ? RED : TX2, true);
+        r.addView(st);
+        c.addView(r);
+        TextView w = text(why, 12, TX2, false);
+        w.setPadding(0, dp(4), 0, 0);
+        c.addView(w);
+        TextView tag = text(required ? "GEREKLİ" : "İSTEĞE BAĞLI", 10, TX3, true);
+        tag.setLetterSpacing(0.08f);
+        tag.setPadding(0, dp(6), 0, 0);
+        c.addView(tag);
+        if (!ok && enable != null) {
+            TextView b = text("ETKİNLEŞTİR", 12, Color.WHITE, true);
+            b.setGravity(Gravity.CENTER);
+            b.setPadding(dp(14), dp(10), dp(14), dp(10));
+            b.setBackground(round(OR, 12));
+            b.setOnClickListener(v -> enable.run());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.topMargin = dp(10);
+            c.addView(b, lp);
+        }
+        return c;
+    }
+
+    void openPermissions() {
+        sheet("İZİNLER", b -> {
+            b.addView(permCard("Oyun üstü panel", Settings.canDrawOverlays(this), true,
+                    "Oyun sırasında FPS, ping ve sıcaklık panelini göstermek için.", this::askOverlay));
+            b.addView(permCard("Kullanım erişimi", Boost.usageAllowed(this), true,
+                    "Oyunun kapandığını algılayıp ayarları geri yüklemek için.", this::askUsage), mlp(10));
+            b.addView(permCard("Rahatsız etme", Boost.dndAllowed(this), false,
+                    "Oyun sırasında bildirim ve aramaları susturmak için.", this::askDnd), mlp(10));
+            b.addView(permCard("Sistem ayarları", Tweaks.systemAllowed(this), false,
+                    "Otomatik parlaklığı oyun boyunca kapatmak için.", this::askSystem), mlp(10));
+            b.addView(permCard("Shizuku", Sh.granted(), false,
+                    (Sh.running() ? "Bağlı değil. " : "Kurulu değil ya da çalışmıyor. ")
+                            + "FPS ölçümü, Android oyun modu ve sunucu tespiti gibi gelişmiş özellikler için.", this::askShizuku), mlp(10));
+            b.addView(permCard("Güvenli ayarlar (ADB)", Tweaks.secureAllowed(this), false,
+                    "Sabit yenileme hızı, animasyon ve dokunma optimizasyonu için. Shizuku bağlıysa otomatik verilir.", this::showAdbHelp), mlp(10));
+        });
+    }
+
+    void openPrivacy() {
+        sheet("GİZLİLİK", b -> {
+            b.addView(toggle("Sunucu geçmişi kaydı", "PUBG'nin bağlandığı sunucu IP'leri yalnız bu cihazda saklanır", "srv_record", true, null));
+            b.addView(toggle("Çevrimiçi konum sorgusu", "Bilinmeyen IP'ler ipwho.is'e (HTTPS) gönderilir", "geo_online", false, null), mlp(8));
+            b.addView(toggle("Hata raporları", "Kapalı · hiçbir veri gönderilmez", "crash_reports", false, null), mlp(8));
+            b.addView(toggle("Analitik", "Kapalı · uygulamada analitik yok", "analytics", false, null), mlp(8));
+            LinearLayout clr = navCard("Sunucu geçmişini temizle", "Kayıtlı IP'ler, konumlar ve ölçümler", v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle("Sunucu geçmişi silinsin mi?")
+                    .setPositiveButton("Sil", (d, w) -> { ServerLog.clear(this); toast("Sunucu geçmişi silindi"); })
+                    .setNegativeButton("Vazgeç", null).show());
+            b.addView(clr, mlp(16));
+            LinearLayout all = navCard("Tüm uygulama verilerini sil", "Ayarlar, profiller, raporlar ve geçmiş", v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle("Tüm veriler silinsin mi?").setMessage("Önce değiştirilmiş sistem ayarları geri yüklenir.")
+                    .setPositiveButton("Sil", (d, w) -> {
+                        if (BoostService.running) stopService(new Intent(this, BoostService.class));
+                        Tweaks.restore(this);
+                        Boost.dndOff(this);
+                        prefs.edit().clear().apply();
+                        toast("Tüm veriler silindi");
+                        recreate();
+                    }).setNegativeButton("Vazgeç", null).show());
+            b.addView(all, mlp(8));
+            TextView n = text("Konumlar önce uygulamanın içindeki tablodan bulunur. Dışarıya veri yalnız \"Çevrimiçi konum sorgusu\" açıksa ve yalnız sunucu IP'si olarak gönderilir.", 11, TX3, false);
+            n.setPadding(dp(4), dp(14), dp(4), 0);
+            b.addView(n);
+        });
+    }
+
+    String diagnosticReport() {
+        StringBuilder r = new StringBuilder();
+        r.append("SİSTEM\n").append("Android ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n")
+                .append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append("\n\n");
+        String ver = "?";
+        try { ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) {}
+        r.append("UYGULAMA  Remna Boost ").append(ver).append('\n');
+        r.append("OYUN  ").append(game == null ? "bulunamadı" : gameName.getText()).append('\n');
+        r.append("SHIZUKU  ").append(Sh.granted() ? "BAĞLI" : Sh.running() ? "İZİN YOK" : "KULLANILAMIYOR").append('\n');
+        r.append("PANEL  ").append(Settings.canDrawOverlays(this) ? "Açık" : "Kapalı").append('\n');
+        r.append("KULLANIM ERİŞİMİ  ").append(Boost.usageAllowed(this) ? "Açık" : "Kapalı").append('\n');
+        r.append("GÜVENLİ AYARLAR  ").append(Tweaks.secureAllowed(this) ? "Açık" : "Kapalı").append('\n');
+        r.append("FPS ÖLÇÜMÜ  ").append(!Sh.granted() ? "Kullanılamıyor (Shizuku yok)" : Live.fpsStats() != null ? "Çalışıyor" : "Henüz ölçülmedi").append('\n');
+        r.append("YENİLEME HIZLARI  ").append(Tweaks.refreshRates(this)).append(" Hz\n");
+        r.append(String.format(java.util.Locale.US, "TERMAL  pil %.0f°C · sensör %s%n", Boost.batteryTemp(this), Perf.cpuCache > 0 ? Perf.cpuLabel + " " + Math.round(Perf.cpuCache) + "°C" : "okunamıyor"));
+        r.append("SON TARAMA  ").append(prefs.getString("scan_diag", "yok")).append('\n');
+        r.append("SUNUCU KAYDI  ").append(ServerLog.load(this).length()).append(" sunucu\n");
+        return r.toString();
+    }
+
+    void openDiagnostics() {
+        sheet("TANILAMA", b -> {
+            TextView t = text("Ağ testi yapılıyor…", 12, TX, false);
+            t.setTypeface(Typeface.MONOSPACE);
+            t.setTextIsSelectable(true);
+            LinearLayout c = card();
+            c.addView(t, new LinearLayout.LayoutParams(-1, -2));
+            b.addView(c);
+            TextView cp = text("TANILAMA RAPORUNU KOPYALA", 13, Color.WHITE, true);
+            cp.setGravity(Gravity.CENTER);
+            cp.setPadding(0, dp(14), 0, dp(14));
+            cp.setBackground(round(OR, 14));
+            cp.setOnClickListener(v -> {
+                ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("diag", t.getText()));
+                toast("Kopyalandı");
+            });
+            b.addView(cp, mlp(14));
+            String fd = prefs.getString("fps_diag", null);
+            if (fd != null) b.addView(navCard("FPS tanılama kaydı", "SurfaceFlinger çıktısı özeti", v ->
+                    new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("FPS tanılama").setMessage(fd)
+                            .setPositiveButton("Kopyala", (d, w) -> ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE))
+                                    .setPrimaryClip(ClipData.newPlainText("fps", fd))).setNegativeButton("Kapat", null).show()), mlp(10));
+            String base = diagnosticReport();
+            t.setText(base + "AĞ  test ediliyor…");
+            new Thread(() -> {
+                int p = -1;
+                for (String ip : Boost.dcFor(this, "Avrupa")) { p = Boost.icmp(ip); if (p > 0) break; }
+                final int fp = p;
+                h.post(() -> t.setText(base + "AĞ  " + (fp > 0 ? "Çalışıyor (PUBG Avrupa " + fp + " ms)" : "PUBG sunucusuna ulaşılamadı") + (Boost.vpnActive(this) ? " · VPN açık" : "")));
+            }).start();
+        });
+    }
+
+    /* ---------------- ilk açılış rehberi ---------------- */
+    void onboarding(int step) {
+        android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        d.setCancelable(false);
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setGravity(Gravity.CENTER_HORIZONTAL);
+        c.setBackgroundColor(BG);
+        c.setPadding(dp(28), dp(60), dp(28), dp(36));
+        TextView stepTv = text(step == 0 ? "" : "ADIM " + step + " / 3", 11, TX3, true);
+        stepTv.setLetterSpacing(0.12f);
+        c.addView(stepTv);
+        ImageView logo = new ImageView(this);
+        logo.setImageDrawable(getApplicationInfo().loadIcon(getPackageManager()));
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(dp(72), dp(72));
+        llp.topMargin = dp(24);
+        c.addView(logo, llp);
+        String title, body;
+        switch (step) {
+            case 0: title = "REMNA BOOST'A\nHOŞ GELDİN"; body = "Oyun Performans Merkezi\n\n✓  FPS ve kare süresi izleme\n✓  Ağ ve bölge analizi\n✓  Termal koruma\n✓  Akıllı optimizasyon"; break;
+            case 1: title = "Oyununu seç"; body = installedNames(); break;
+            case 2: title = "Oyun üstü paneli aç"; body = "Oyun sırasında FPS, ping ve sıcaklığı küçük bir panelde gösterir. Paneli istediğin yere sürükleyebilirsin."; break;
+            default: title = "Gelişmiş özellikler\n(isteğe bağlı)"; body = "Shizuku ile FPS ölçümü, Android oyun modu ve sunucu tespiti açılır. Kurulum birkaç dakika sürer; şimdi atlayıp sonra Ayarlar → İzinler'den açabilirsin."; break;
+        }
+        TextView tt = text(title, 24, TX, true);
+        tt.setGravity(Gravity.CENTER);
+        tt.setPadding(0, dp(24), 0, dp(14));
+        c.addView(tt);
+        TextView bt = text(body, 14, TX2, false);
+        bt.setGravity(Gravity.CENTER);
+        bt.setLineSpacing(dp(4), 1f);
+        c.addView(bt, new LinearLayout.LayoutParams(-1, 0, 1));
+        String primary = step == 0 ? "DEVAM" : step == 1 ? "DEVAM" : "ETKİNLEŞTİR";
+        TextView pb = text(primary, 14, Color.WHITE, true);
+        pb.setGravity(Gravity.CENTER);
+        pb.setPadding(0, dp(16), 0, dp(16));
+        pb.setBackground(round(OR, 16));
+        c.addView(pb, new LinearLayout.LayoutParams(-1, -2));
+        TextView skip = text(step >= 2 ? "ATLA" : "", 13, TX2, true);
+        skip.setGravity(Gravity.CENTER);
+        skip.setPadding(0, dp(16), 0, 0);
+        c.addView(skip, new LinearLayout.LayoutParams(-1, -2));
+        Runnable next = () -> {
+            d.dismiss();
+            if (step >= 3) { prefs.edit().putBoolean("onboarded", true).apply(); refresh(); }
+            else onboarding(step + 1);
+        };
+        pb.setOnClickListener(v -> {
+            if (step == 1 && Boost.installedGames(this).size() > 1) { d.dismiss(); chooseGameThen(() -> onboarding(2)); return; }
+            if (step == 2) askOverlay();
+            if (step == 3) askShizuku();
+            next.run();
+        });
+        skip.setOnClickListener(v -> next.run());
+        d.setContentView(c);
+        d.show();
+    }
+
+    String installedNames() {
+        java.util.List<String[]> g = Boost.installedGames(this);
+        if (g.isEmpty()) return "Desteklenen bir PUBG Mobile sürümü bulunamadı. Uygulamayı yine de kullanabilir, oyunu yükledikten sonra ana ekrandan seçebilirsin.";
+        StringBuilder sb = new StringBuilder("Bulunan oyunlar:\n\n");
+        for (String[] x : g) sb.append("●  ").append(x[1]).append('\n');
+        sb.append(g.size() > 1 ? "\nDevam'a basınca hangisini kullanacağını seçebilirsin." : "\nBu oyun otomatik seçildi.");
+        return sb.toString();
+    }
+
+    void chooseGameThen(Runnable after) {
+        List<String[]> games = Boost.installedGames(this);
+        String[] names = new String[games.size()];
+        for (int i = 0; i < names.length; i++) names[i] = games.get(i)[1];
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Oyun seç").setCancelable(false)
+                .setItems(names, (d, w) -> { prefs.edit().putString("game", games.get(w)[0]).apply(); pickGame(); after.run(); }).show();
+    }
 
     /* ---------------- izinler ---------------- */
     void askOverlay() {
@@ -1174,40 +1607,62 @@ public class MainActivity extends Activity {
     static final class BigButton extends View {
         final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG), ring = new Paint(Paint.ANTI_ALIAS_FLAG);
         boolean busy;
-        float spin;
+        float spin, pulse;
+        long successUntil;
+        final android.animation.ValueAnimator pulser = android.animation.ValueAnimator.ofFloat(0f, 1f);
 
         BigButton(Context c) {
             super(c);
             ring.setStyle(Paint.Style.STROKE);
             ring.setStrokeCap(Paint.Cap.ROUND);
             setClickable(true);
+            pulser.setDuration(2400);
+            pulser.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+            pulser.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+            pulser.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+            pulser.addUpdateListener(a -> { pulse = (float) a.getAnimatedValue(); invalidate(); });
+        }
+
+        @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); pulser.start(); }
+
+        @Override protected void onDetachedFromWindow() { pulser.cancel(); super.onDetachedFromWindow(); }
+
+        @Override protected void onWindowVisibilityChanged(int v) {
+            super.onWindowVisibilityChanged(v);
+            if (v == VISIBLE) { if (!pulser.isStarted()) pulser.start(); } else pulser.cancel(); // görünmezken CPU harcama
         }
 
         void setBusy(boolean b) { busy = b; invalidate(); }
 
+        void success() { successUntil = System.currentTimeMillis() + 1400; invalidate(); }
+
         @Override protected void onDraw(Canvas cv) {
             float w = getWidth(), h = getHeight(), cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2;
             float d = getResources().getDisplayMetrics().density;
-            p.setShader(new RadialGradient(cx, cy, R, new int[]{0x66F97316, 0x22E11D48, 0x00000000}, new float[]{0.45f, 0.75f, 1f}, Shader.TileMode.CLAMP));
+            boolean ok = System.currentTimeMillis() < successUntil;
+            int glowA = (int) (0x30 + 0x30 * (busy ? 1 : pulse));
+            int glow = ok ? 0x35E6A1 : 0xFF6B35;
+            p.setShader(new RadialGradient(cx, cy, R, new int[]{(glowA << 24) | glow, 0x10000000 | glow, 0}, new float[]{0.5f, 0.78f, 1f}, Shader.TileMode.CLAMP));
             cv.drawCircle(cx, cy, R, p);
-            float core = R * 0.66f;
-            p.setShader(new LinearGradient(cx - core, cy - core, cx + core, cy + core, 0xFFFB923C, 0xFFE11D48, Shader.TileMode.CLAMP));
-            p.setShadowLayer(22 * d, 0, 8 * d, 0x88E11D48);
+            float core = R * 0.64f;
+            p.setShader(new LinearGradient(cx - core, cy - core, cx + core, cy + core, ok ? 0xFF35E6A1 : 0xFFFF8A57, ok ? 0xFF1FB57E : 0xFFE8451C, Shader.TileMode.CLAMP));
+            p.setShadowLayer(18 * d, 0, 6 * d, ok ? 0x6635E6A1 : 0x66E8451C);
             cv.drawCircle(cx, cy, core, p);
             p.clearShadowLayer();
-            p.setShader(new LinearGradient(cx, cy - core, cx, cy + core * 0.2f, 0x40FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+            p.setShader(new LinearGradient(cx, cy - core, cx, cy + core * 0.2f, 0x33FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
             cv.drawCircle(cx, cy, core, p);
-            ring.setStrokeWidth(3 * d);
             float r2 = core + 14 * d;
             if (busy) {
-                ring.setColor(0xFFFB923C);
+                ring.setStrokeWidth(3 * d);
+                ring.setColor(0xFFFF8A57);
                 cv.drawArc(new RectF(cx - r2, cy - r2, cx + r2, cy + r2), spin, 100, false, ring);
-                spin = (spin + 8) % 360;
+                spin = (spin + 7) % 360;
                 postInvalidateOnAnimation();
             } else {
-                ring.setColor(0x22FFFFFF);
                 ring.setStrokeWidth(1 * d);
+                ring.setColor(ok ? 0x8835E6A1 : (0x14 + (int) (0x18 * pulse)) << 24 | 0xFFFFFF);
                 cv.drawCircle(cx, cy, r2, ring);
+                if (ok) postInvalidateDelayed(100);
             }
         }
     }
