@@ -128,6 +128,7 @@ final class ServerLog {
     /** Analiz sonucu satırları için yardımcı yapı. */
     static final class Row {
         String ip, proto, where, as, region, how = "";
+        boolean stale;
         int ping = -1, n;
         boolean vpn, direct;
     }
@@ -148,18 +149,24 @@ final class ServerLog {
             r.region = region(e.optString("cc"));
             r.vpn = e.optBoolean("vpn");
             r.direct = e.optBoolean("direct");
-            r.ping = e.optInt("ping", -1);
-            r.how = e.optString("how", "");
+            String k = vpnMode ? "pingVpn" : "ping";
+            r.ping = e.optInt(k, -1);
+            r.how = e.optString(k + "How", e.optString("how", ""));
             out.add(r);
         }
         return out;
     }
 
+    static boolean vpnMode;
+
     static void putPing(Context c, String ip, int ms, String how) {
         JSONObject log = load(c);
         JSONObject e = log.optJSONObject(ip);
         if (e == null) return;
-        try { e.put("ping", ms); e.put("how", how); e.put("pingAt", System.currentTimeMillis()); } catch (Exception ignored) {}
+        if (ms < 0 && e.optInt("ping", -1) > 0) return; // başarısız ölçüm eski iyi değeri silmesin
+        if (ms <= 0) return; // başarısız ölçüm eski iyi değeri silmesin
+        String k = vpnMode ? "pingVpn" : "ping";
+        try { e.put(k, ms); e.put(k + "How", how); e.put(k + "At", System.currentTimeMillis()); } catch (Exception ignored) {}
         save(c, log);
     }
 }

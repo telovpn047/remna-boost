@@ -426,11 +426,13 @@ public class MainActivity extends Activity {
                 .setNeutralButton("Temizle", (d, w) -> { ServerLog.clear(this); histSub.setText("Kayıtlar silindi"); })
                 .setNegativeButton("Kapat", null).show();
         new Thread(() -> {
+            ServerLog.vpnMode = Boost.vpnActive(this);
             ServerLog.enrich(this);
             java.util.List<ServerLog.Row> rows = ServerLog.rows(this);
             post(dlg, body, rows.size() + " sunucu · ping ölçülüyor (" + (Boost.vpnActive(this) ? "VPN açık" : "VPN kapalı") + ")…");
+            boolean vpnOn = Boost.vpnActive(this);
             java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(6);
-            for (ServerLog.Row r : rows) ex.submit(() -> {
+            if (!vpnOn) for (ServerLog.Row r : rows) ex.submit(() -> {
                 int v = Sh.granted() ? Sh.icmp(r.ip) : -1;
                 r.how = "icmp";
                 if (v < 0) {
@@ -439,8 +441,8 @@ public class MainActivity extends Activity {
                     v = gp > 0 ? Boost.tcpProbe(r.ip, 443, 80, gp) : Boost.tcpProbe(r.ip, 443, 80);
                     r.how = "tcp";
                 }
-                r.ping = v;
-                ServerLog.putPing(this, r.ip, v, r.how);
+                if (v > 0) { r.ping = v; ServerLog.putPing(this, r.ip, v, r.how); }
+                else r.stale = r.ping > 0; // kayıtlı eski değer gösterilir
             });
             ex.shutdown();
             try { ex.awaitTermination(120, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
@@ -457,7 +459,9 @@ public class MainActivity extends Activity {
         for (ServerLog.Row r : rows) if (r.proto.equals("UDP")) udp++; else tcp++;
         StringBuilder sb = new StringBuilder();
         sb.append(rows.size()).append(" sunucu · maç (UDP) ").append(udp).append(" · lobi/giriş (TCP) ").append(tcp).append('\n');
-        sb.append("Ölçüm şu anki bağlantıyla: ").append(Boost.vpnActive(this) ? "VPN AÇIK" : "VPN KAPALI").append("\n\n");
+        if (Boost.vpnActive(this))
+            sb.append("⚠ VPN AÇIK: ping ölçülmedi (VPN ping'i tünelden geçirmiyor). Aşağıdaki değerler son VPN'siz ölçümden.\n\n");
+        else sb.append("Ölçüm: VPN KAPALI (doğrudan bağlantı)\n\n");
 
         // bölge özeti (yalnız maç sunucuları; yoksa hepsi)
         java.util.Map<String, java.util.List<Integer>> reg = new java.util.TreeMap<>();
@@ -488,7 +492,8 @@ public class MainActivity extends Activity {
         sb.append("\n== SUNUCULAR (pinge göre) ==\n");
         for (ServerLog.Row r : rows) {
             String as = r.as.length() > 22 ? r.as.substring(0, 22) : r.as;
-            sb.append(String.format(java.util.Locale.US, "%6s%s %s  %-15s %dx%n", r.ping < 0 ? "—" : r.ping + "ms", "tcp".equals(r.how) && r.ping > 0 ? "ᵗ" : " ", r.proto, r.ip, r.n));
+            sb.append(String.format(java.util.Locale.US, "%6s%s %s  %-15s %dx%n", r.ping < 0 ? "—" : r.ping + "ms",
+                    r.stale ? "*" : "tcp".equals(r.how) && r.ping > 0 ? "ᵗ" : " ", r.proto, r.ip, r.n));
             sb.append("        ").append(r.where).append(" · ").append(as)
                     .append(r.vpn && r.direct ? " · VPN+doğrudan" : r.vpn ? " · VPN'de görüldü" : " · doğrudan görüldü").append('\n');
         }
@@ -497,6 +502,8 @@ public class MainActivity extends Activity {
         if (ge != null && rows.size() > 0 && "konum yok".equals(rows.get(0).where))
             sb.append("İpucu: Konum servisi engelli. VPN'i açıp bir kez Analiz'e bas; konumlar kaydedilir, sonra VPN'i kapatabilirsin.\n");
         sb.append("\nUDP sunucuları PUBG'nin eşleştirmede yokladığı bölge noktalarıdır; maçın kendi sunucusu root olmadan görünmez.");
+        sb.append("\n* = şimdi ölçülemedi, önceki ölçüm gösteriliyor.");
+        if (Boost.vpnActive(this)) sb.append("\n⚠ VPN açık: çoğu VPN ping/yoklamayı tünelden geçirmez. Doğru sonuç için VPN'i kapatıp tekrar analiz et.");
         sb.append("\nᵗ = ICMP kapalı, TCP yoklamasıyla ölçüldü. '—' = güvenilir ölçüm alınamadı.\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
         return sb.toString();
     }
