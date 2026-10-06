@@ -1,4 +1,7 @@
-plugins { id 'com.android.application' }
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
 
 // İmza bilgileri ASLA kaynak kodda tutulmaz: CI'da GitHub Secrets'tan, yerelde ortam değişkenlerinden gelir.
 def ksFile = System.getenv("KEYSTORE_FILE") ?: "release.jks"
@@ -11,8 +14,8 @@ android {
         applicationId 'com.remna.boost'
         minSdk 26
         targetSdk 34
-        versionCode 5
-        versionName '1.4.0'
+        versionCode 6
+        versionName '1.5.0'
     }
     signingConfigs {
         release {
@@ -34,6 +37,7 @@ android {
     }
     lint { checkReleaseBuilds false; abortOnError false }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = '17' }
 }
 dependencies {
     implementation 'dev.rikka.shizuku:api:13.1.5'

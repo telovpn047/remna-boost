@@ -420,7 +420,7 @@ public class MainActivity extends Activity {
         if (hh.fps < 0) sb.append(live ? "FPS ölçülemiyor bu cihazda (Gelişmiş → Shizuku)\n" : "FPS oyun sırasında ölçülür\n");
         if (hh.rec != null) sb.append("\nÖneri: ").append(hh.rec);
         healthBody.setText(sb.toString().trim());
-        gameSub.setText(game == null ? "" : live ? "● OYUNDA" : "● HAZIR");
+        gameSub.setText(game == null ? "" : (live ? "● OYUNDA" : "● HAZIR") + "  ·  " + nameOf(prefs.getString("profile", "custom")));
         gameSub.setTextColor(live ? OR : GREEN);
     }
 
@@ -439,6 +439,7 @@ public class MainActivity extends Activity {
         srvSub = text("Maça girince PUBG'nin bağlandığı sunucu burada görünür", 12, TX2, false);
         ((LinearLayout) sv2.getChildAt(0)).addView(srvSub);
         root.addView(sv2);
+        root.addView(navCard("Ağ geçmişi", "Bugün · 7 gün · 30 gün · bölge istatistikleri", v -> openNetHistory(1)), mlp(8));
         LinearLayout hc = navCard("Sunucu geçmişi", null, v -> openServerHistory());
         histSub = text("Oynadıkça bağlanılan sunucular bu cihazda saklanır", 12, TX2, false);
         ((LinearLayout) hc.getChildAt(0)).addView(histSub);
@@ -506,7 +507,7 @@ public class MainActivity extends Activity {
                 {"FPS", live && f >= 0 ? String.valueOf(f) : fs == null ? "Yok" : "—"},
                 {"ORT", fs == null ? "—" : String.valueOf(fs[0])},
                 {"%1 DÜŞÜK", fs == null ? "—" : String.valueOf(fs[1])},
-                {"KARE", live && f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "—"}}));
+                {"KARE", live && Live.ftAvg > 0 ? String.format(java.util.Locale.US, "%.1f ms", Live.ftAvg) : live && f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "—"}}));
         if (fs == null) {
             TextView n = text(Sh.granted() ? "FPS bu oturumda ölçülemedi." : "FPS ölçümü bu cihazda kullanılamıyor (Gelişmiş → Shizuku).", 11, TX3, false);
             n.setPadding(dp(4), dp(6), 0, 0);
@@ -526,6 +527,16 @@ public class MainActivity extends Activity {
             boolean anyFps = false;
             for (int x : fps) if (x > 0) { anyFps = true; break; }
             if (anyFps) perfBox.addView(graphCard("FPS", fps, GREEN, ""), mlp(10));
+            int[] ft = Live.ftSeries();
+            boolean anyFt = false;
+            for (int x : ft) if (x > 0) { anyFt = true; break; }
+            if (anyFt) {
+                perfBox.addView(graphCard("KARE SÜRESİ (en yavaş kare)", ft, 0xFFB58CFF, "ms"), mlp(8));
+                TextView stt = text("Takılma (25 ms+): " + Live.stutterTotal + "   ·   Ağır kare (33 ms+): " + Live.heavyTotal
+                        + (Live.heavyTotal == 0 && Live.stutterTotal < 5 ? "   ✓ akıcı" : ""), 12, Live.heavyTotal > 10 ? YEL : TX2, false);
+                stt.setPadding(dp(4), dp(6), 0, 0);
+                perfBox.addView(stt);
+            }
             perfBox.addView(graphCard("PING", pg, 0xFF6EA8FE, "ms"), mlp(8));
             perfBox.addView(graphCard("SICAKLIK", tp, YEL, "°C"), mlp(8));
         } else {
@@ -634,6 +645,7 @@ public class MainActivity extends Activity {
                         .putString("hz_mode", "60").putString("anim_mode", "0.5").putString("thermal", "sensitive").putString("cleanup", "off");
         }
         e.apply();
+        GameProfiles.save(this, game);
         if (BoostService.running) Tweaks.reapply(this);
         int y = scrolls[0].getScrollY();
         setContentView(build());
@@ -994,6 +1006,7 @@ public class MainActivity extends Activity {
             StringBuilder sb = new StringBuilder();
             if (o.has("avgFps")) sb.append("FPS  ort ").append(o.getInt("avgFps")).append("  ·  en düşük %5: ").append(o.getInt("lowFps")).append("  ·  en yüksek ").append(o.getInt("maxFps")).append('\n');
             if (o.has("avgPing")) sb.append("Ping  ort ").append(o.getInt("avgPing")).append(" ms  ·  en yüksek ").append(o.getInt("maxPing")).append(" ms\n");
+            if (o.has("stutter") && o.has("avgFps")) sb.append("Takılma ").append(o.getInt("stutter")).append("  ·  ağır kare ").append(o.optInt("heavy")).append('\n');
             sb.append(String.format(java.util.Locale.US, "Sıcaklık  pil en yüksek %.0f°C", o.getDouble("maxBatt")));
             if (o.getDouble("maxCpu") > 0) sb.append(String.format(java.util.Locale.US, "  ·  CPU en yüksek %.0f°C", o.getDouble("maxCpu")));
             TextView t = text(sb.toString(), 12, TX2, false);
@@ -1138,6 +1151,8 @@ public class MainActivity extends Activity {
                         int m = ps.median();
                         res[idx].setTextColor(m < 80 ? GREEN : m < 150 ? YEL : RED);
                         best[idx] = target != null ? sc : sc / 2; // tahmini ölçümler öneride geri planda
+                        if (target != null && !Boost.vpnActive(this))
+                            NetHistory.add(this, REGIONS[idx][0], ps.median(), ps.jitter(), ps.lossPct(), "test");
                     }
                     done[0]++;
                     if (done[0] == n) {
@@ -1199,7 +1214,12 @@ public class MainActivity extends Activity {
         String[] names = new String[games.size()];
         for (int i = 0; i < names.length; i++) names[i] = games.get(i)[1];
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Oyun seç")
-                .setItems(names, (d, w) -> { prefs.edit().putString("game", games.get(w)[0]).apply(); pickGame(); }).show();
+                .setItems(names, (d, w) -> {
+                    boolean had = GameProfiles.switchTo(this, game, games.get(w)[0]);
+                    toast(had ? names[w] + " profili yüklendi" : names[w] + " için yeni profil (mevcut ayarlar kopyalandı)");
+                    setContentView(build());
+                    refresh();
+                }).show();
     }
 
     void boost() {
@@ -1304,6 +1324,83 @@ public class MainActivity extends Activity {
         }
     };
 
+    /* ---------------- ağ geçmişi ---------------- */
+    void openNetHistory(int days) {
+        sheet("AĞ GEÇMİŞİ", b -> {
+            LinearLayout seg = new LinearLayout(this);
+            String[] l = {"BUGÜN", "7 GÜN", "30 GÜN"};
+            int[] d = {0, 7, 30};
+            LinearLayout list = new LinearLayout(this);
+            list.setOrientation(LinearLayout.VERTICAL);
+            TextView[] btn = new TextView[3];
+            for (int i = 0; i < 3; i++) {
+                TextView t = text(l[i], 12, TX3, true);
+                t.setGravity(Gravity.CENTER);
+                t.setPadding(0, dp(10), 0, dp(10));
+                final int di = d[i], ii = i;
+                t.setOnClickListener(v -> {
+                    for (int k = 0; k < 3; k++) { btn[k].setTextColor(k == ii ? TX : TX3); btn[k].setBackground(k == ii ? round(CARD2, 12) : null); }
+                    fillNetHistory(list, di);
+                });
+                btn[i] = t;
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+                lp.leftMargin = dp(3); lp.rightMargin = dp(3);
+                seg.addView(t, lp);
+            }
+            seg.setBackground(round(CARD, 14));
+            seg.setPadding(dp(3), dp(3), dp(3), dp(3));
+            b.addView(seg);
+            b.addView(list, mlp(10));
+            int start = days <= 0 ? 0 : days <= 7 ? 1 : 2;
+            btn[start].performClick();
+            LinearLayout clr = navCard("Ağ geçmişini temizle", NetHistory.count(this) + " ölçüm kayıtlı", v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle("Ağ geçmişi silinsin mi?")
+                    .setPositiveButton("Sil", (dd, w) -> { NetHistory.clear(this); fillNetHistory(list, 30); toast("Ağ geçmişi silindi"); })
+                    .setNegativeButton("Vazgeç", null).show());
+            b.addView(clr, mlp(16));
+            TextView n = text("Kaynak: bölge testleri ve oyun oturumları (VPN kapalıyken). Yalnız bölge özetleri tutulur, IP adresi tutulmaz.", 11, TX3, false);
+            n.setPadding(dp(4), dp(10), dp(4), 0);
+            b.addView(n);
+        });
+    }
+
+    void fillNetHistory(LinearLayout list, int days) {
+        list.removeAllViews();
+        java.util.List<NetHistory.RegionStat> st = NetHistory.stats(this, days);
+        if (st.isEmpty()) {
+            TextView e = text("Bu dönemde ölçüm yok. Ağ sekmesinden \"Tüm bölgeleri test et\" ya da bir oyun oturumu sonrası veriler oluşur.", 12, TX2, false);
+            e.setPadding(dp(4), dp(8), dp(4), dp(8));
+            list.addView(e);
+            return;
+        }
+        NetHistory.RegionStat stable = NetHistory.mostStable(st);
+        NetHistory.RegionStat best = st.get(0);
+        list.addView(statGrid(new String[][]{
+                {"EN DÜŞÜK", best.getRegion()},
+                {"EN STABİL", stable == null ? "—" : stable.getRegion()}}));
+        for (NetHistory.RegionStat r : st) {
+            LinearLayout c = card();
+            c.setOrientation(LinearLayout.VERTICAL);
+            c.setGravity(Gravity.START);
+            LinearLayout top = new LinearLayout(this);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            top.addView(text(r.getRegion(), 15, TX, true), new LinearLayout.LayoutParams(0, -2, 1));
+            int m = r.getMedian();
+            top.addView(text(m + " ms", 17, m < 80 ? GREEN : m < 150 ? YEL : RED, true));
+            c.addView(top);
+            TextView d = text("ortanca " + m + " · ort " + r.getAvg() + " · dalgalanma " + r.getJitter() + " · kayıp %" + r.getLoss() + " · " + r.getCount() + " ölçüm", 12, TX2, false);
+            d.setPadding(0, dp(4), 0, 0);
+            c.addView(d);
+            list.addView(c, mlp(8));
+        }
+        String[] srv = ServerLog.pingTarget(this, null);
+        if (srv != null) {
+            TextView t = text("En iyi kayıtlı PUBG sunucusu: " + srv[0] + " (" + srv[1] + ")", 11, TX3, false);
+            t.setPadding(dp(4), dp(10), dp(4), 0);
+            list.addView(t);
+        }
+    }
+
     /* ---------------- tam ekran sayfa (izinler, gizlilik, tanılama) ---------------- */
     LinearLayout sheet(String title, java.util.function.Consumer<LinearLayout> fill) {
         android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar);
@@ -1386,6 +1483,7 @@ public class MainActivity extends Activity {
     void openPrivacy() {
         sheet("GİZLİLİK", b -> {
             b.addView(toggle("Sunucu geçmişi kaydı", "PUBG'nin bağlandığı sunucu IP'leri yalnız bu cihazda saklanır", "srv_record", true, null));
+            b.addView(toggle("Ağ geçmişi", "Bölge bazında ping özetleri (IP yok) · bu cihazda", "net_hist_on", true, null), mlp(8));
             b.addView(toggle("Çevrimiçi konum sorgusu", "Bilinmeyen IP'ler ipwho.is'e (HTTPS) gönderilir", "geo_online", false, null), mlp(8));
             b.addView(toggle("Hata raporları", "Kapalı · hiçbir veri gönderilmez", "crash_reports", false, null), mlp(8));
             b.addView(toggle("Analitik", "Kapalı · uygulamada analitik yok", "analytics", false, null), mlp(8));
@@ -1536,7 +1634,7 @@ public class MainActivity extends Activity {
         String[] names = new String[games.size()];
         for (int i = 0; i < names.length; i++) names[i] = games.get(i)[1];
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Oyun seç").setCancelable(false)
-                .setItems(names, (d, w) -> { prefs.edit().putString("game", games.get(w)[0]).apply(); pickGame(); after.run(); }).show();
+                .setItems(names, (d, w) -> { GameProfiles.switchTo(this, game, games.get(w)[0]); pickGame(); after.run(); }).show();
     }
 
     /* ---------------- izinler ---------------- */

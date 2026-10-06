@@ -14,7 +14,9 @@ final class Live {
     static volatile String pingSrc = "";
 
     static final int N = 150; // 2 sn aralıkla ~5 dakika
-    private static final int[] fpsH = new int[N], pingH = new int[N], tempH = new int[N];
+    private static final int[] fpsH = new int[N], pingH = new int[N], tempH = new int[N], ftH = new int[N];
+    static volatile float ftAvg = -1, ftMax = -1;
+    static volatile int stutterTotal, heavyTotal;
     private static int count, pos;
     private static final ArrayDeque<Integer> recentPing = new ArrayDeque<>();
     private static final List<Integer> sessionFps = new ArrayList<>();
@@ -24,6 +26,15 @@ final class Live {
         recentPing.clear();
         sessionFps.clear();
         fps = -1; ping = -1; cpu = -1;
+        ftAvg = -1; ftMax = -1; stutterTotal = 0; heavyTotal = 0;
+    }
+
+    /** Kare süresi örneği (ms). Geçersizse -1. */
+    static void frame(boolean valid, float avg, float max, int st, int hv) {
+        if (!valid) { ftAvg = -1; ftMax = -1; return; }
+        ftAvg = avg; ftMax = max;
+        stutterTotal += st;
+        heavyTotal += hv;
     }
 
     static synchronized void pushPing(int p) {
@@ -32,7 +43,7 @@ final class Live {
     }
 
     static synchronized void sample(int f, int p, float t) {
-        fpsH[pos] = f; pingH[pos] = p; tempH[pos] = Math.round(t);
+        fpsH[pos] = f; pingH[pos] = p; tempH[pos] = Math.round(t); ftH[pos] = ftMax < 0 ? -1 : Math.round(ftMax);
         pos = (pos + 1) % N;
         if (count < N) count++;
         if (f >= 0) sessionFps.add(f);
@@ -50,6 +61,8 @@ final class Live {
     static synchronized int[] pingSeries() { return ordered(pingH); }
 
     static synchronized int[] tempSeries() { return ordered(tempH); }
+
+    static synchronized int[] ftSeries() { return ordered(ftH); }
 
     /** Son 30 ping ölçümünden istatistik (başarısızlar kayıp sayılır). */
     static synchronized PingStats pingStats() {

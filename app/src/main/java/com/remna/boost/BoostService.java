@@ -92,6 +92,7 @@ public class BoostService extends Service {
                 lastCpu = Perf.cpuTemp();
                 Live.fps = lastFps;
                 Live.cpu = lastCpu;
+                Live.frame(Sh.ftValid && lastFps > 0, Sh.ftAvg, Sh.ftMax, Sh.stutters, Sh.heavy);
                 try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
             }
         }).start();
@@ -226,8 +227,10 @@ public class BoostService extends Service {
         else {
             fpsTv.setText(f + " FPS");
             fpsTv.setTextColor(f >= 55 ? C_OK : f >= 30 ? C_WARN : C_BAD);
-            ftTv.setText(f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "");
-            ftTv.setTextColor(f >= 55 ? C_DIM : C_WARN);
+            float ft = Live.ftAvg > 0 ? Live.ftAvg : (f > 0 ? 1000f / f : -1);
+            float fm = Live.ftMax;
+            ftTv.setText(ft > 0 ? String.format(java.util.Locale.US, "%.1f ms", ft) : "");
+            ftTv.setTextColor(fm > 33.4f ? C_BAD : fm > 25 ? C_WARN : C_DIM);
         }
         int p = lastPing;
         String tag = "≈".equals(pingSrc) ? "≈" : "oyun".equals(pingSrc) || pingSrc.isEmpty() ? "" : shortReg(pingSrc) + " ";
@@ -314,7 +317,14 @@ public class BoostService extends Service {
     public void onDestroy() {
         running = false;
         h.removeCallbacks(tick);
-        if (session != null) session.save(this);
+        if (session != null) {
+            session.stutter = Live.stutterTotal;
+            session.heavy = Live.heavyTotal;
+            session.save(this);
+        }
+        PingStats sp = Live.pingStats();
+        String reg = MainActivity.regionOfHost(Boost.prefs(this).getString("ping_host", ""));
+        if (!sp.empty()) NetHistory.add(this, reg == null ? "Avrupa" : reg, sp.median(), sp.jitter(), sp.lossPct(), "oyun");
         new Thread(Sh::fpsStop).start();
         getSystemService(NotificationManager.class).cancel(2);
         if (panel != null) try { wm.removeView(panel); } catch (Exception ignored) {}

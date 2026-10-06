@@ -172,6 +172,7 @@ final class Sh {
     static int fps(String pkg) {
         int f = fpsLatency(pkg);
         if (f > 0) return f;
+        ftValid = false; // timestats tek tek kare süresi vermez
         int t = fpsTimestats(pkg);
         return t > 0 ? t : f;
     }
@@ -248,9 +249,35 @@ final class Sh {
                 if (t > max) max = t;
             } catch (NumberFormatException ignored) {}
         }
-        if (n < 2) return 0;
+        if (n < 2) { ftValid = false; return 0; }
         int c = 0;
         for (int i = 0; i < n; i++) if (ts[i] > max - 1_000_000_000L) c++;
+        // kare süreleri: son 2 sn içindeki ardışık kareler arası (ms)
+        long[] w = new long[n];
+        int m = 0;
+        for (int i = 0; i < n; i++) if (ts[i] > max - 2_000_000_000L) w[m++] = ts[i];
+        java.util.Arrays.sort(w, 0, m);
+        double sum = 0, mx = 0;
+        int st = 0, hv = 0;
+        for (int i = 1; i < m; i++) {
+            double d = (w[i] - w[i - 1]) / 1_000_000.0;
+            sum += d;
+            if (d > mx) mx = d;
+            if (d > 33.4) hv++;
+            else if (d > 25) st++;
+        }
+        if (m > 1) {
+            ftAvg = (float) (sum / (m - 1));
+            ftMax = (float) mx;
+            stutters = st;
+            heavy = hv;
+            ftValid = true;
+        } else ftValid = false;
         return c;
     }
+
+    /** Son ölçümün kare süresi verileri (yalnız --latency yöntemiyle; timestats'ta yok). */
+    static volatile boolean ftValid;
+    static volatile float ftAvg, ftMax;
+    static volatile int stutters, heavy;
 }

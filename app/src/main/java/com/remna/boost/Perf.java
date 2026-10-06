@@ -99,6 +99,7 @@ final class Perf {
         final long start = System.currentTimeMillis();
         final List<Integer> fps = new ArrayList<>(), ping = new ArrayList<>();
         float maxBatt = 0, maxCpu = 0;
+        int stutter, heavy;
 
         void add(int f, int p, float batt, float cpu) {
             if (f >= 0) fps.add(f);
@@ -116,6 +117,8 @@ final class Perf {
                 o.put("dur", dur);
                 o.put("maxBatt", maxBatt);
                 o.put("maxCpu", maxCpu);
+                o.put("stutter", stutter);
+                o.put("heavy", heavy);
                 if (!fps.isEmpty()) {
                     List<Integer> s = new ArrayList<>(fps);
                     Collections.sort(s);
