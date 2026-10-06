@@ -136,6 +136,8 @@ final class Sh {
 
     /** ICMP ping (ms); başarısızsa -1. */
     static int icmp(String ip) {
+        int own = Boost.icmp(ip); // root'suz, Shizuku'suz
+        if (own > 0 || !granted()) return own;
         String out = exec("ping -c 3 -i 0.2 -W 1 " + ip);
         int best = -1;
         for (String l : out.split("\n")) {

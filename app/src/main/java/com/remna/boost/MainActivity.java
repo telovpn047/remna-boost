@@ -454,7 +454,6 @@ public class MainActivity extends Activity {
     void renderSetup() {
         setupBox.removeAllViews();
         java.util.List<String> miss = new java.util.ArrayList<>();
-        if (!Sh.granted()) miss.add("Shizuku çalışmıyor (FPS, gerçek ping, oyun modu)");
         if (!Settings.canDrawOverlays(this)) miss.add("Oyun üstü panel izni");
         if (!Boost.usageAllowed(this)) miss.add("Kullanım erişimi (otomatik kapanma, rapor)");
         if (!Boost.dndAllowed(this) && !"off".equals(prefs.getString("dnd_mode", "priority"))) miss.add("Rahatsız etme erişimi");
@@ -462,7 +461,20 @@ public class MainActivity extends Activity {
         statusPill.setText(ok ? "● Hazır" : "● Kurulum " + miss.size());
         statusPill.setTextColor(ok ? GREEN : OR);
         statusPill.setBackground(round(ok ? 0x1A34D399 : 0x1AF97316, 14));
-        if (ok) return;
+        if (ok) {
+            if (!Sh.granted()) {
+                LinearLayout p = card();
+                LinearLayout pt = new LinearLayout(this);
+                pt.setOrientation(LinearLayout.VERTICAL);
+                pt.addView(text("Pro özellikler (isteğe bağlı)", 14, TX, true));
+                pt.addView(text("FPS göstergesi · sunucu kaydı · Android oyun modu · Shizuku ile", 11, TX3, false));
+                p.addView(pt, new LinearLayout.LayoutParams(0, -2, 1));
+                p.addView(text("Nasıl? ›", 13, OR, true));
+                p.setOnClickListener(v -> askShizuku());
+                setupBox.addView(p, mlp(12));
+            }
+            return;
+        }
         LinearLayout c = card();
         c.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable g = round(0x14F97316, 20);
@@ -836,7 +848,7 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(18), dp(8), dp(18), dp(8));
         boolean vpn = Boost.vpnActive(this);
-        TextView head = text((vpn ? "VPN üzerinden ölçülüyor" : "Doğrudan bağlantı (VPN kapalı)") + " · her bölge 6 deneme", 12, TX2, false);
+        TextView head = text((vpn ? "VPN üzerinden ölçülüyor" : "Doğrudan bağlantı (VPN kapalı)") + " · her bölge 6 deneme · mümkünse doğrudan PUBG veri merkezine ICMP", 12, TX2, false);
         box.addView(head);
         TextView rec = text("Ölçülüyor…", 15, OR, true);
         rec.setPadding(0, dp(8), 0, dp(10));
@@ -878,8 +890,12 @@ public class MainActivity extends Activity {
                 int ok = 0, min = Integer.MAX_VALUE;
                 long sum = 0, jit = 0;
                 int prev = -1;
+                java.util.List<String> dcs = Boost.dcFor(this, regionOfHost(REGIONS[idx][1]) == null ? REGIONS[idx][0] : regionOfHost(REGIONS[idx][1]));
+                String dcIp = null;
+                for (String ip : dcs) if (Boost.icmpOnce(ip, 1200, 1) > 0) { dcIp = ip; break; }
+                final String target = dcIp;
                 for (int k = 0; k < 6; k++) {
-                    int r = Boost.rtt(REGIONS[idx][1]);
+                    int r = target != null ? Boost.icmpOnce(target, 1200, k + 2) : Boost.rtt(REGIONS[idx][1]);
                     if (r > 0) {
                         ok++; sum += r; min = Math.min(min, r);
                         if (prev > 0) jit += Math.abs(r - prev);
@@ -897,7 +913,8 @@ public class MainActivity extends Activity {
                         res[idx].setTextColor(RED);
                         best[idx] = Integer.MAX_VALUE;
                     } else {
-                        res[idx].setText(fMin + " ms  ·  ort " + avg + "  ·  dalgalanma " + jitter + "  ·  kayıp %" + loss);
+                        res[idx].setText((target != null ? "" : "≈") + fMin + " ms  ·  ort " + avg + "  ·  dalgalanma " + jitter + "  ·  kayıp %" + loss
+                                + (target != null ? "  ·  PUBG sunucusu" : "  ·  yaklaşık"));
                         res[idx].setTextColor(fMin < 80 ? GREEN : fMin < 150 ? 0xFFFBBF24 : RED);
                         // oyunda önemli olan: düşük ping + az dalgalanma + kayıpsız
                         best[idx] = (int) (fMin + jitter * 2 + loss * 10);
@@ -967,7 +984,10 @@ public class MainActivity extends Activity {
 
     void boost() {
         if (game == null) { toast("PUBG Mobile yüklü değil"); return; }
-        if (!Sh.granted()) toast("⚠ Shizuku çalışmıyor: FPS, gerçek ping ve sunucu analizi bu oyunda çalışmayacak");
+        if (!Sh.granted() && prefs.getBoolean("fps", true) && !prefs.getBoolean("pro_hint", false)) {
+            prefs.edit().putBoolean("pro_hint", true).apply();
+            toast("Ping ve diğer özellikler çalışıyor. FPS göstergesi için isteğe bağlı Shizuku gerekir.");
+        }
         big.setBusy(true);
         btnLabel.setText("…");
         new Thread(() -> {

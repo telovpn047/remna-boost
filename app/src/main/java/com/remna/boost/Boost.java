@@ -273,6 +273,76 @@ final class Boost {
         return best;
     }
 
+    /**
+     * Root/Shizuku gerektirmeyen gerçek ICMP ping (ms): Android tüm uygulamalara "datagram ICMP"
+     * soketi izni verir (ping_group_range). En iyi 3 denemeyi döner; yanıt yoksa -1.
+     */
+    static int icmp(String ip) {
+        int best = -1;
+        for (int i = 0; i < 3; i++) {
+            int r = icmpOnce(ip, 1000, i + 1);
+            if (r >= 0 && (best < 0 || r < best)) best = r;
+        }
+        return best;
+    }
+
+    static int icmpOnce(String ip, int timeoutMs, int seq) {
+        java.io.FileDescriptor fd = null;
+        try {
+            fd = android.system.Os.socket(android.system.OsConstants.AF_INET, android.system.OsConstants.SOCK_DGRAM, android.system.OsConstants.IPPROTO_ICMP);
+            byte[] pkt = new byte[16];
+            pkt[0] = 8; // echo request
+            pkt[6] = (byte) (seq >> 8); pkt[7] = (byte) seq;
+            for (int i = 8; i < 16; i++) pkt[i] = (byte) i;
+            int sum = 0;
+            for (int i = 0; i < pkt.length; i += 2) sum += ((pkt[i] & 0xff) << 8) | (pkt[i + 1] & 0xff);
+            while ((sum >> 16) != 0) sum = (sum & 0xffff) + (sum >> 16);
+            sum = ~sum & 0xffff;
+            pkt[2] = (byte) (sum >> 8); pkt[3] = (byte) sum;
+            java.net.InetAddress addr = java.net.InetAddress.getByName(ip);
+            long t = System.nanoTime();
+            android.system.Os.sendto(fd, pkt, 0, pkt.length, 0, addr, 0);
+            byte[] buf = new byte[256];
+            long deadline = t + timeoutMs * 1_000_000L;
+            while (true) {
+                int left = (int) ((deadline - System.nanoTime()) / 1_000_000);
+                if (left <= 0) return -1;
+                android.system.StructPollfd pf = new android.system.StructPollfd();
+                pf.fd = fd;
+                pf.events = (short) android.system.OsConstants.POLLIN;
+                if (android.system.Os.poll(new android.system.StructPollfd[]{pf}, left) <= 0) return -1;
+                int n = android.system.Os.recvfrom(fd, buf, 0, buf.length, 0, null);
+                if (n >= 8 && buf[0] == 0 && buf[7] == (byte) seq)
+                    return (int) Math.max(1, (System.nanoTime() - t) / 1_000_000);
+            }
+        } catch (Throwable e) {
+            return -1;
+        } finally {
+            if (fd != null) try { android.system.Os.close(fd); } catch (Throwable ignored) {}
+        }
+    }
+
+    /**
+     * Yerleşik PUBG veri merkezi listesi (Türkmenistan'dan yapılan analizde ICMP'ye yanıt verdiği doğrulananlar).
+     * {bölge, ip, şehir}. Kullanıcının kendi sunucu kaydı varsa onunla birleştirilir.
+     */
+    static final String[][] PUBG_DC = {
+            {"Avrupa", "49.51.130.96", "Frankfurt"},
+            {"Avrupa", "49.51.130.11", "Frankfurt"},
+            {"Asya", "101.32.138.88", "Singapur"},
+            {"Asya", "101.32.110.254", "Singapur"},
+            {"KRJP", "119.28.149.60", "Seul"},
+    };
+
+    /** Bir bölge için ICMP ile ölçülebilen PUBG veri merkezi IP'leri (yerleşik + kayıttan). */
+    static java.util.List<String> dcFor(Context c, String region) {
+        java.util.LinkedHashSet<String> r = new java.util.LinkedHashSet<>();
+        for (String[] d : PUBG_DC) if (d[0].equals(region)) r.add(d[1]);
+        String[] t = ServerLog.pingTarget(c, region);
+        if (t != null && region.equals(t[1])) r.add(t[0]);
+        return new java.util.ArrayList<>(r);
+    }
+
     /** Şu an bir VPN üzerinden mi bağlıyız? */
     static boolean vpnActive(Context c) {
         try {

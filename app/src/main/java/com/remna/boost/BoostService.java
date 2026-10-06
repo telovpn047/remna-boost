@@ -67,7 +67,7 @@ public class BoostService extends Service {
         Notification n = new Notification.Builder(this, "boost")
                 .setSmallIcon(R.drawable.ic_stat).setColor(0xFFF97316)
                 .setContentTitle("Oyun modu açık")
-                .setContentText(Sh.granted() ? "Ping, FPS ve sunucular izleniyor" : "⚠ Shizuku çalışmıyor: FPS ve sunucu analizi kapalı")
+                .setContentText(Sh.granted() ? "Ping, FPS ve sunucular izleniyor" : "Ping, RAM ve sıcaklık izleniyor")
                 .setOngoing(true).setContentIntent(open)
                 .addAction(new Notification.Action.Builder(null, "Kapat", stop).build()).build();
         notif = n;
@@ -133,12 +133,17 @@ public class BoostService extends Service {
                     }
                 } catch (Exception ignored) {}
             }
-            // 2) Maç sunucusu görünmüyorsa: kayıtlı PUBG veri merkezine (seçili bölge) ICMP
-            if (v < 0 && Sh.granted()) {
-                String[] t = ServerLog.pingTarget(this, MainActivity.regionOfHost(Boost.prefs(this).getString("ping_host", "")));
-                if (t != null) {
-                    int r = Sh.icmp(t[0]);
-                    if (r > 5) { v = r; pingSrc = t[1]; }
+            // 2) Maç sunucusu görünmüyorsa: seçili bölgenin PUBG veri merkezine ICMP (Shizuku gerekmez)
+            if (v < 0) {
+                String reg = MainActivity.regionOfHost(Boost.prefs(this).getString("ping_host", ""));
+                if (reg == null) reg = "Avrupa";
+                for (String ip : Boost.dcFor(this, reg)) {
+                    int r = Boost.icmp(ip);
+                    if (r > 5) { v = r; pingSrc = reg; break; }
+                }
+                if (v < 0) {
+                    String[] t = ServerLog.pingTarget(this, null);
+                    if (t != null) { int r = Sh.icmp(t[0]); if (r > 5) { v = r; pingSrc = t[1]; } }
                 }
             }
             // 3) Son yedek: bölgeye yaklaşık HTTP ölçümü
@@ -157,7 +162,7 @@ public class BoostService extends Service {
             if (!running) return;
             if (panel != null) {
                 int f = lastFps;
-                boolean want = Boost.prefs(BoostService.this).getBoolean("fps", true);
+                boolean want = Boost.prefs(BoostService.this).getBoolean("fps", true) && Sh.granted();
                 fpsTv.setVisibility(want ? View.VISIBLE : View.GONE);
                 if (!Sh.granted()) { fpsTv.setText("FPS: Shizuku yok"); fpsTv.setTextColor(0xFF94A3B8); }
                 else if (f < 0) { fpsTv.setText("— FPS"); fpsTv.setTextColor(0xFF94A3B8); }
