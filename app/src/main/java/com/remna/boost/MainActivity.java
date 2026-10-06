@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     SharedPreferences prefs;
     String game;
     LinearLayout root, permBox, reportBox;
+    TextView srvSub;
     TextView ramTv, tempTv, pingTv, gameName, gameSub, btnLabel;
     ImageView gameIcon;
     BigButton big;
@@ -86,6 +87,8 @@ public class MainActivity extends Activity {
         pickGame();
         renderPerms();
         renderReport();
+        String sip = prefs.getString("srv_ip", null);
+        if (sip != null) srvSub.setText(sip + "  ·  " + new java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(new java.util.Date(prefs.getLong("srv_at", 0))));
         if ("com.remna.boost.BOOST".equals(getIntent().getAction())) {
             getIntent().setAction(null);
             h.postDelayed(this::boost, 300);
@@ -200,6 +203,17 @@ public class MainActivity extends Activity {
         });
         root.addView(tc, mlp(12));
 
+        LinearLayout sv2 = card();
+        LinearLayout st3 = new LinearLayout(this);
+        st3.setOrientation(LinearLayout.VERTICAL);
+        st3.addView(text("Oyun sunucusu", 15, TX, true));
+        srvSub = text("Maça girince PUBG'nin bağlandığı sunucu burada görünür", 12, TX2, false);
+        st3.addView(srvSub);
+        sv2.addView(st3, new LinearLayout.LayoutParams(0, -2, 1));
+        sv2.addView(text("Analiz", 14, OR, true));
+        sv2.setOnClickListener(v -> openServerInfo());
+        root.addView(sv2, mlp(12));
+
         reportBox = new LinearLayout(this);
         reportBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(reportBox);
@@ -254,6 +268,9 @@ public class MainActivity extends Activity {
         root.addView(choice("Animasyon hızı", "anim_mode", "0.5",
                 new String[]{"Değiştirme", "Hızlı (0.5x)", "Kapalı (0x)"}, new String[]{"off", "0.5", "0"}, this::askAdb), mlp(8));
         root.addView(toggle("Otomatik parlaklığı kapat", "Oyunda parlaklık zıplamaz", "autobright", true, this::askSystem), mlp(8));
+        boolean ts = Tweaks.touchSupported(this);
+        root.addView(toggle("Dokunma hassasiyeti", ts ? "Ekran dokunuşlara daha hızlı tepki verir · Samsung" : "Bu telefonda Samsung ayarı bulunamadı",
+                "touch", true, this::askAdb), mlp(8));
 
         root.addView(section("OYUN ÜSTÜ PANEL"));
         root.addView(toggle("FPS göstergesi", "Oyunun gerçek FPS'i · Shizuku gerekir", "fps", true, this::askShizuku));
@@ -377,6 +394,57 @@ public class MainActivity extends Activity {
         });
         return l;
     }
+
+    /* ---------------- oyun sunucusu analizi ---------------- */
+    void openServerInfo() {
+        String ip = prefs.getString("srv_ip", null);
+        if (ip == null) { toast("Önce BOOST ile oyuna gir; maç başlayınca sunucu tespit edilir"); return; }
+        TextView body = text("Sunucu: " + ip + "\nKonum sorgulanıyor…", 13, TX, false);
+        body.setPadding(dp(20), dp(8), dp(20), dp(8));
+        body.setTextIsSelectable(true);
+        body.setTypeface(Typeface.MONOSPACE);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(body);
+        AlertDialog dlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("PUBG oyun sunucusu").setView(sv)
+                .setPositiveButton("Kopyala", (d, w) -> {
+                    ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("srv", body.getText()));
+                    toast("Kopyalandı");
+                }).setNegativeButton("Kapat", null).show();
+        StringBuilder sb = new StringBuilder("Sunucu: " + ip + "\n");
+        new Thread(() -> {
+            // konum / sağlayıcı (ip-api.com)
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(
+                        "http://ip-api.com/json/" + ip + "?fields=status,country,regionName,city,isp,org,as&lang=tr").openConnection();
+                c.setConnectTimeout(6000);
+                c.setReadTimeout(6000);
+                java.io.InputStream in = c.getInputStream();
+                String js = new java.util.Scanner(in, "UTF-8").useDelimiter("\\A").next();
+                org.json.JSONObject o = new org.json.JSONObject(js);
+                sb.append("Konum: ").append(o.optString("city")).append(", ").append(o.optString("regionName")).append(", ").append(o.optString("country")).append('\n');
+                sb.append("Sağlayıcı: ").append(o.optString("isp")).append('\n');
+                sb.append("Ağ: ").append(o.optString("as")).append('\n');
+            } catch (Exception e) {
+                sb.append("Konum alınamadı: ").append(e.getClass().getSimpleName()).append('\n');
+            }
+            sb.append("VPN: ").append(Boost.vpnActive(this) ? "açık" : "kapalı").append('\n');
+            post(dlg, body, sb + "\nPing ölçülüyor…");
+            if (!Sh.granted()) { post(dlg, body, sb + "\nPing ve rota için Shizuku gerekli."); return; }
+            int p = Sh.icmp(ip);
+            sb.append("Ping: ").append(p < 0 ? "yanıt yok (sunucu ICMP'ye kapalı olabilir)" : p + " ms").append("\n\n");
+            sb.append("Rota (traceroute):\n");
+            post(dlg, body, sb + "…");
+            for (String[] hop : Sh.trace(ip, 20)) {
+                sb.append(String.format(java.util.Locale.US, "%2s  %-16s %s%n", hop[0], hop[1], hop[2]));
+                post(dlg, body, sb.toString());
+            }
+            sb.append("\nİpucu: Süre hangi sıçramada aniden artıyorsa gecikme oradan kaynaklanıyor. '*' o noktanın yanıt vermediğini gösterir.");
+            post(dlg, body, sb.toString());
+        }).start();
+    }
+
+    void post(AlertDialog dlg, TextView tv, String s) { h.post(() -> { if (dlg.isShowing()) tv.setText(s); }); }
 
     /* ---------------- maç raporu ---------------- */
     void renderReport() {

@@ -105,6 +105,9 @@ public class BoostService extends Service {
                 try {
                     int uid = getPackageManager().getApplicationInfo(game, 0).uid;
                     String ip = Sh.gameServer(uid);
+                    if (ip != null && !ip.equals(Boost.prefs(this).getString("srv_ip", ""))) {
+                        Boost.prefs(this).edit().putString("srv_ip", ip).putLong("srv_at", System.currentTimeMillis()).apply();
+                    }
                     if (ip != null) {
                         int r = Sh.icmp(ip);
                         // VPN bazen ICMP'yi yerelde yanıtlar (1-3 ms) → güvenilmez

@@ -86,6 +86,32 @@ final class Sh {
         return ip;
     }
 
+    /** Basit traceroute: TTL'yi artırarak her sıçramanın adresi ve süresi. */
+    static java.util.List<String[]> trace(String ip, int maxHops) {
+        java.util.List<String[]> hops = new java.util.ArrayList<>();
+        for (int ttl = 1; ttl <= maxHops; ttl++) {
+            long t = System.nanoTime();
+            String out = exec("ping -c 1 -W 1 -t " + ttl + " " + ip + " 2>&1");
+            long ms = (System.nanoTime() - t) / 1_000_000;
+            String hop = "*", time = "";
+            boolean reached = false;
+            for (String l : out.split("\n")) {
+                if (l.startsWith("From ")) {
+                    hop = l.substring(5).split("[ :]")[0];
+                    time = ms + " ms";
+                } else if (l.contains("bytes from")) {
+                    hop = ip;
+                    int i = l.indexOf("time=");
+                    time = i > 0 ? l.substring(i + 5).split(" ")[0] + " ms" : ms + " ms";
+                    reached = true;
+                }
+            }
+            hops.add(new String[]{String.valueOf(ttl), hop, time});
+            if (reached) break;
+        }
+        return hops;
+    }
+
     /** ICMP ping (ms); başarısızsa -1. */
     static int icmp(String ip) {
         String out = exec("ping -c 3 -i 0.2 -W 1 " + ip);

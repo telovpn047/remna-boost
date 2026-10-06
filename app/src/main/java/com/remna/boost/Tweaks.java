@@ -40,6 +40,19 @@ final class Tweaks {
         return new java.util.ArrayList<>(set);
     }
 
+    /** Samsung "Dokunma hassasiyeti" ayarının anahtarı (One UI). */
+    static final String TOUCH_KEY = "auto_adjust_touch";
+
+    /** Bu telefonda Samsung dokunma hassasiyeti ayarı var mı? */
+    static boolean touchSupported(Context c) {
+        return Settings.System.getString(c.getContentResolver(), TOUCH_KEY) != null;
+    }
+
+    static void setTouch(Context c, int v) {
+        try { Settings.System.putInt(c.getContentResolver(), TOUCH_KEY, v); }
+        catch (Throwable t) { Sh.exec("settings put system " + TOUCH_KEY + " " + v); }
+    }
+
     /** Soğutma modu: yenileme hızını geçici olarak sabitler (oyun modu bitince restore() eski değeri geri yükler). */
     static void forceHz(Context c, float hz) {
         for (String k : new String[]{"peak_refresh_rate", "min_refresh_rate"}) {
@@ -86,6 +99,10 @@ final class Tweaks {
                 } catch (Throwable ignored) {}
             }
         }
+        if (p.getBoolean("touch", true) && touchSupported(c) && (secureAllowed(c) || Sh.granted())) {
+            e.putInt("prev_touch", Settings.System.getInt(c.getContentResolver(), TOUCH_KEY, 0));
+            setTouch(c, 1);
+        }
         e.putBoolean("tw_applied", true).apply();
     }
 
@@ -107,6 +124,10 @@ final class Tweaks {
         if (p.contains("prev_bmode")) {
             try { Settings.System.putInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS_MODE, p.getInt("prev_bmode", 1)); } catch (Throwable ignored) {}
             e.remove("prev_bmode");
+        }
+        if (p.contains("prev_touch")) {
+            setTouch(c, p.getInt("prev_touch", 0));
+            e.remove("prev_touch");
         }
         e.putBoolean("tw_applied", false).apply();
     }
