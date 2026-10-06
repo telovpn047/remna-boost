@@ -58,7 +58,7 @@ public class MainActivity extends Activity {
     SharedPreferences prefs;
     String game;
     LinearLayout root, permBox, reportBox;
-    TextView srvSub;
+    TextView srvSub, histSub;
     TextView ramTv, tempTv, pingTv, gameName, gameSub, btnLabel;
     ImageView gameIcon;
     BigButton big;
@@ -87,6 +87,8 @@ public class MainActivity extends Activity {
         pickGame();
         renderPerms();
         renderReport();
+        int hn = ServerLog.load(this).length();
+        if (hn > 0) histSub.setText(hn + " sunucu kaydedildi");
         String sip = prefs.getString("srv_ip", null);
         if (sip != null) srvSub.setText(sip + "  ·  " + new java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(new java.util.Date(prefs.getLong("srv_at", 0))));
         if ("com.remna.boost.BOOST".equals(getIntent().getAction())) {
@@ -213,6 +215,17 @@ public class MainActivity extends Activity {
         sv2.addView(text("Analiz", 14, OR, true));
         sv2.setOnClickListener(v -> openServerInfo());
         root.addView(sv2, mlp(12));
+
+        LinearLayout hc = card();
+        LinearLayout ht = new LinearLayout(this);
+        ht.setOrientation(LinearLayout.VERTICAL);
+        ht.addView(text("Sunucu geçmişi · en iyi bölge", 15, TX, true));
+        histSub = text("Oynadıkça PUBG'nin bağlandığı tüm sunucular toplanır", 12, TX2, false);
+        ht.addView(histSub);
+        hc.addView(ht, new LinearLayout.LayoutParams(0, -2, 1));
+        hc.addView(text("Analiz", 14, OR, true));
+        hc.setOnClickListener(v -> openServerHistory());
+        root.addView(hc, mlp(12));
 
         reportBox = new LinearLayout(this);
         reportBox.setOrientation(LinearLayout.VERTICAL);
@@ -393,6 +406,83 @@ public class MainActivity extends Activity {
                     .show();
         });
         return l;
+    }
+
+    /* ---------------- sunucu geçmişi analizi ---------------- */
+    void openServerHistory() {
+        if (ServerLog.load(this).length() == 0) { toast("Henüz kayıt yok. BOOST ile birkaç maç oyna; sunucular otomatik toplanır."); return; }
+        TextView body = text("Konumlar sorgulanıyor…", 12, TX, false);
+        body.setPadding(dp(18), dp(8), dp(18), dp(8));
+        body.setTextIsSelectable(true);
+        body.setTypeface(Typeface.MONOSPACE);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(body);
+        AlertDialog dlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("PUBG sunucu analizi").setView(sv)
+                .setPositiveButton("Kopyala", (d, w) -> {
+                    ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("srv", body.getText()));
+                    toast("Kopyalandı");
+                })
+                .setNeutralButton("Temizle", (d, w) -> { ServerLog.clear(this); histSub.setText("Kayıtlar silindi"); })
+                .setNegativeButton("Kapat", null).show();
+        new Thread(() -> {
+            ServerLog.enrich(this);
+            java.util.List<ServerLog.Row> rows = ServerLog.rows(this);
+            post(dlg, body, rows.size() + " sunucu · ping ölçülüyor (" + (Boost.vpnActive(this) ? "VPN açık" : "VPN kapalı") + ")…");
+            if (Sh.granted()) {
+                java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(6);
+                for (ServerLog.Row r : rows) ex.submit(() -> { r.ping = Sh.icmp(r.ip); ServerLog.putPing(this, r.ip, r.ping); });
+                ex.shutdown();
+                try { ex.awaitTermination(90, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+            }
+            post(dlg, body, buildHistoryReport(rows));
+        }).start();
+    }
+
+    String buildHistoryReport(java.util.List<ServerLog.Row> rows) {
+        java.util.Collections.sort(rows, (a, b) -> {
+            int pa = a.ping < 0 ? 99999 : a.ping, pb = b.ping < 0 ? 99999 : b.ping;
+            return pa != pb ? pa - pb : b.n - a.n;
+        });
+        int udp = 0, tcp = 0;
+        for (ServerLog.Row r : rows) if (r.proto.equals("UDP")) udp++; else tcp++;
+        StringBuilder sb = new StringBuilder();
+        sb.append(rows.size()).append(" sunucu · maç (UDP) ").append(udp).append(" · lobi/giriş (TCP) ").append(tcp).append('\n');
+        sb.append("Ölçüm şu anki bağlantıyla: ").append(Boost.vpnActive(this) ? "VPN AÇIK" : "VPN KAPALI").append("\n\n");
+
+        // bölge özeti (yalnız maç sunucuları; yoksa hepsi)
+        java.util.Map<String, java.util.List<Integer>> reg = new java.util.TreeMap<>();
+        java.util.Map<String, Integer> regCount = new java.util.TreeMap<>();
+        for (ServerLog.Row r : rows) {
+            if (udp > 0 && !r.proto.equals("UDP")) continue;
+            Integer c = regCount.get(r.region);
+            regCount.put(r.region, c == null ? 1 : c + 1);
+            if (r.ping > 0) {
+                if (!reg.containsKey(r.region)) reg.put(r.region, new java.util.ArrayList<>());
+                reg.get(r.region).add(r.ping);
+            }
+        }
+        sb.append("== BÖLGELER (maç sunucuları) ==\n");
+        String bestReg = null;
+        int bestMed = Integer.MAX_VALUE;
+        for (String k : regCount.keySet()) {
+            java.util.List<Integer> l = reg.get(k);
+            if (l == null || l.isEmpty()) { sb.append(String.format(java.util.Locale.US, "%-18s %2d sunucu · ping yok%n", k, regCount.get(k))); continue; }
+            java.util.Collections.sort(l);
+            int med = l.get(l.size() / 2), min = l.get(0);
+            sb.append(String.format(java.util.Locale.US, "%-18s %2d sunucu · en iyi %d ms · ortanca %d ms%n", k, regCount.get(k), min, med));
+            if (med < bestMed) { bestMed = med; bestReg = k; }
+        }
+        if (bestReg != null) sb.append("\n➜ Önerilen PUBG bölgesi: ").append(bestReg).append(" (ortanca ").append(bestMed).append(" ms)\n");
+        sb.append("\n== SUNUCULAR (pinge göre) ==\n");
+        for (ServerLog.Row r : rows) {
+            String as = r.as.length() > 22 ? r.as.substring(0, 22) : r.as;
+            sb.append(String.format(java.util.Locale.US, "%6s  %s  %-15s %dx%n", r.ping < 0 ? "—" : r.ping + "ms", r.proto, r.ip, r.n));
+            sb.append("        ").append(r.where).append(" · ").append(as)
+                    .append(r.vpn && r.direct ? " · VPN+doğrudan" : r.vpn ? " · VPN'de görüldü" : " · doğrudan görüldü").append('\n');
+        }
+        sb.append("\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
+        return sb.toString();
     }
 
     /* ---------------- oyun sunucusu analizi ---------------- */

@@ -68,6 +68,25 @@ final class Sh {
         return best;
     }
 
+    /** Oyunun tüm açık bağlantıları: {protokol, ip, port}. UDP = maç sunucusu, TCP = lobi/giriş/indirme. */
+    static java.util.List<String[]> connections(int uid) {
+        java.util.List<String[]> r = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String file : new String[]{"udp", "udp6", "tcp", "tcp6"}) {
+            String proto = file.startsWith("udp") ? "UDP" : "TCP";
+            for (String l : exec("cat /proc/net/" + file).split("\n")) {
+                String[] f = l.trim().split("\\s+");
+                if (f.length < 8 || f[0].startsWith("sl")) continue;
+                try { if (Integer.parseInt(f[7]) != uid) continue; } catch (NumberFormatException e) { continue; }
+                String ip = hexIp(f[2]);
+                if (ip == null) continue;
+                String port = String.valueOf(Integer.parseInt(f[2].substring(f[2].indexOf(':') + 1), 16));
+                if (seen.add(proto + ip)) r.add(new String[]{proto, ip, port});
+            }
+        }
+        return r;
+    }
+
     /** /proc/net/udp(6) "HEXIP:PORT" → "a.b.c.d" (yalnız IPv4; boş/yerel adresler null). */
     static String hexIp(String s) {
         int c = s.indexOf(':');
@@ -82,7 +101,10 @@ final class Sh {
         if (h.length() != 8) return null;
         long v = Long.parseLong(h, 16);
         String ip = (v & 0xff) + "." + ((v >> 8) & 0xff) + "." + ((v >> 16) & 0xff) + "." + ((v >> 24) & 0xff);
-        if (ip.startsWith("0.") || ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("172.")) return null;
+        if (ip.startsWith("0.") || ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.")) return null;
+        if (ip.startsWith("172.")) { int b = (int) ((v >> 8) & 0xff); if (b >= 16 && b <= 31) return null; }
+        if (ip.startsWith("100.")) { int b = (int) ((v >> 8) & 0xff); if (b >= 64 && b <= 127) return null; }
+        if (ip.startsWith("26.26.26.") || ip.startsWith("172.19.0.")) return null; // VPN tun adresleri
         return ip;
     }
 

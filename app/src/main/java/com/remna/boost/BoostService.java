@@ -97,7 +97,15 @@ public class BoostService extends Service {
 
     /** Ping ayrı iş parçacığında (ana iş parçacığını bloklamasın). */
     final Runnable pinger = () -> {
+        int loop = 0;
         while (running) {
+            // her ~10 sn: oyunun tüm bağlantılarını sunucu geçmişine kaydet
+            if (loop++ % 5 == 0 && game != null && Sh.granted()) {
+                try {
+                    int u = getPackageManager().getApplicationInfo(game, 0).uid;
+                    ServerLog.record(this, Sh.connections(u), Boost.vpnActive(this));
+                } catch (Exception ignored) {}
+            }
             int v = -1;
             pingSrc = "";
             // 1) Shizuku varsa: PUBG'nin bağlı olduğu gerçek oyun sunucusuna ICMP ping
