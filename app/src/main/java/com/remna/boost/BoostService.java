@@ -66,7 +66,8 @@ public class BoostService extends Service {
         PendingIntent open = PendingIntent.getActivity(this, 2, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
         Notification n = new Notification.Builder(this, "boost")
                 .setSmallIcon(R.drawable.ic_stat).setColor(0xFFF97316)
-                .setContentTitle("Oyun modu açık").setContentText("Ping ve RAM izleniyor")
+                .setContentTitle("Oyun modu açık")
+                .setContentText(Sh.granted() ? "Ping, FPS ve sunucular izleniyor" : "⚠ Shizuku çalışmıyor: FPS ve sunucu analizi kapalı")
                 .setOngoing(true).setContentIntent(open)
                 .addAction(new Notification.Action.Builder(null, "Kapat", stop).build()).build();
         notif = n;
@@ -100,11 +101,19 @@ public class BoostService extends Service {
         int loop = 0;
         while (running) {
             // her ~10 sn: oyunun tüm bağlantılarını sunucu geçmişine kaydet
-            if (loop++ % 5 == 0 && game != null && Sh.granted()) {
-                try {
-                    int u = getPackageManager().getApplicationInfo(game, 0).uid;
-                    ServerLog.record(this, Sh.connections(u), Boost.vpnActive(this));
-                } catch (Exception ignored) {}
+            if (loop++ % 5 == 0 && game != null) {
+                String diag;
+                if (!Sh.granted()) diag = "Shizuku çalışmıyor";
+                else {
+                    try {
+                        int u = getPackageManager().getApplicationInfo(game, 0).uid;
+                        java.util.List<String[]> cs = Sh.connections(u);
+                        ServerLog.record(this, cs, Boost.vpnActive(this));
+                        diag = cs.size() + " bağlantı bulundu";
+                    } catch (Exception e) { diag = "hata: " + e.getClass().getSimpleName(); }
+                }
+                Boost.prefs(this).edit().putString("scan_diag", diag + " · "
+                        + new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date())).apply();
             }
             int v = -1;
             pingSrc = "";

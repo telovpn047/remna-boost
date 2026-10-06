@@ -410,7 +410,7 @@ public class MainActivity extends Activity {
 
     /* ---------------- sunucu geçmişi analizi ---------------- */
     void openServerHistory() {
-        if (ServerLog.load(this).length() == 0) { toast("Henüz kayıt yok. BOOST ile birkaç maç oyna; sunucular otomatik toplanır."); return; }
+        if (ServerLog.load(this).length() == 0) { toast(Sh.granted() ? "Henüz kayıt yok. Son tarama: " + prefs.getString("scan_diag", "yok") : "Shizuku çalışmıyor. Shizuku'yu açıp 'Başlat'a bas, sonra tekrar BOOST yap."); return; }
         TextView body = text("Konumlar sorgulanıyor…", 12, TX, false);
         body.setPadding(dp(18), dp(8), dp(18), dp(8));
         body.setTextIsSelectable(true);
@@ -488,7 +488,7 @@ public class MainActivity extends Activity {
     /* ---------------- oyun sunucusu analizi ---------------- */
     void openServerInfo() {
         String ip = prefs.getString("srv_ip", null);
-        if (ip == null) { toast("Önce BOOST ile oyuna gir; maç başlayınca sunucu tespit edilir"); return; }
+        if (ip == null) { toast(Sh.granted() ? "Önce BOOST ile oyuna gir; maç başlayınca sunucu tespit edilir\nSon tarama: " + prefs.getString("scan_diag", "yok") : "Shizuku çalışmıyor. Shizuku'yu açıp 'Başlat'a bas, sonra tekrar BOOST yap."); return; }
         TextView body = text("Sunucu: " + ip + "\nKonum sorgulanıyor…", 13, TX, false);
         body.setPadding(dp(20), dp(8), dp(20), dp(8));
         body.setTextIsSelectable(true);
@@ -755,6 +755,7 @@ public class MainActivity extends Activity {
 
     void boost() {
         if (game == null) { toast("PUBG Mobile yüklü değil"); return; }
+        if (!Sh.granted()) toast("⚠ Shizuku çalışmıyor: FPS, gerçek ping ve sunucu analizi bu oyunda çalışmayacak");
         big.setBusy(true);
         btnLabel.setText("…");
         new Thread(() -> {
