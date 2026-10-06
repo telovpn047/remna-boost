@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = Boost.prefs(this);
+        if (!BoostService.running && prefs.getBoolean("tw_applied", false)) { Tweaks.restore(this); Boost.dndOff(this); }
         String ph = prefs.getString("ping_host", "");
         if (ph.startsWith("ec2.")) prefs.edit().putString("ping_host", "s3." + ph.substring(4)).apply();
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
@@ -76,6 +77,7 @@ public class MainActivity extends Activity {
             rikka.shizuku.Shizuku.addRequestPermissionResultListener((code, res) -> h.post(() -> {
                 if (res == PackageManager.PERMISSION_GRANTED) { Tweaks.secureAllowed(this); toast("Shizuku bağlandı"); }
                 renderPerms();
+                renderSetup();
             }));
         } catch (Throwable ignored) {}
         setContentView(build());
@@ -84,9 +86,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        refresh();
+    }
+
+    /** Ekranı güncel verilerle doldurur (onResume ve yeniden çizimlerde). */
+    void refresh() {
         pickGame();
         renderPerms();
         renderReport();
+        renderSetup();
         int hn = ServerLog.load(this).length();
         if (hn > 0) histSub.setText(hn + " sunucu kaydedildi");
         String sip = prefs.getString("srv_ip", null);
@@ -140,24 +148,79 @@ public class MainActivity extends Activity {
         return t;
     }
 
-    View build() {
+    LinearLayout[] pages = new LinearLayout[3];
+    ScrollView[] scrolls = new ScrollView[3];
+    TextView[] tabs = new TextView[3];
+    int tab = 0;
+    TextView statusPill;
+    LinearLayout setupBox, profileRow;
+
+    LinearLayout newPage(FrameLayout content, int i) {
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(28));
-        sv.addView(root);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setPadding(dp(18), dp(4), dp(18), dp(28));
+        sv.addView(l);
+        content.addView(sv, new FrameLayout.LayoutParams(-1, -1));
+        pages[i] = l;
+        scrolls[i] = sv;
+        return l;
+    }
 
-        // başlık
+    void selectTab(int i) {
+        tab = i;
+        for (int k = 0; k < 3; k++) {
+            scrolls[k].setVisibility(k == i ? View.VISIBLE : View.GONE);
+            tabs[k].setTextColor(k == i ? Color.WHITE : TX3);
+            tabs[k].setBackground(k == i ? round(0x26F97316, 16) : null);
+        }
+    }
+
+    View build() {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+
+        // başlık + durum rozeti
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(18), dp(16), dp(18), dp(10));
         ImageView logo = new ImageView(this);
         logo.setImageDrawable(getApplicationInfo().loadIcon(getPackageManager()));
-        top.addView(logo, new LinearLayout.LayoutParams(dp(36), dp(36)));
-        TextView title = text("Remna Boost", 22, TX, true);
+        top.addView(logo, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        TextView title = text("Remna Boost", 21, TX, true);
         title.setPadding(dp(12), 0, 0, 0);
-        top.addView(title);
-        root.addView(top);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        statusPill = text("…", 12, TX, true);
+        statusPill.setPadding(dp(12), dp(6), dp(12), dp(6));
+        statusPill.setOnClickListener(v -> selectTab(2));
+        top.addView(statusPill);
+        outer.addView(top);
+
+        FrameLayout content = new FrameLayout(this);
+        outer.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout pGame = newPage(content, 0), pNet = newPage(content, 1), pSet = newPage(content, 2);
+
+        // alt gezinme
+        LinearLayout nav = new LinearLayout(this);
+        nav.setPadding(dp(12), dp(8), dp(12), dp(10));
+        nav.setBackground(round(0xFF0B1124, 0));
+        String[] names = {"⚡  Oyun", "📶  Ağ", "⚙  Ayarlar"};
+        for (int i = 0; i < 3; i++) {
+            TextView t = text(names[i], 14, TX3, true);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, dp(10), 0, dp(10));
+            final int idx = i;
+            t.setOnClickListener(v -> selectTab(idx));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            lp.leftMargin = dp(4); lp.rightMargin = dp(4);
+            nav.addView(t, lp);
+            tabs[i] = t;
+        }
+        outer.addView(nav);
+
+        root = pGame;
 
         // oyun kartı
         LinearLayout gc = card();
@@ -171,7 +234,7 @@ public class MainActivity extends Activity {
         gt.addView(gameName); gt.addView(gameSub);
         gc.addView(gt, new LinearLayout.LayoutParams(0, -2, 1));
         gc.setOnClickListener(v -> chooseGame());
-        root.addView(gc, mlp(20));
+        root.addView(gc, mlp(4));
 
         // büyük düğme
         FrameLayout bf = new FrameLayout(this);
@@ -192,6 +255,23 @@ public class MainActivity extends Activity {
         pingTv = stat(st, "Ping");
         root.addView(st, mlp(18));
 
+        root.addView(section("PROFİL"));
+        profileRow = new LinearLayout(this);
+        root.addView(profileRow);
+
+        setupBox = new LinearLayout(this);
+        setupBox.setOrientation(LinearLayout.VERTICAL);
+        root.addView(setupBox);
+
+        reportBox = new LinearLayout(this);
+        reportBox.setOrientation(LinearLayout.VERTICAL);
+        root.addView(reportBox);
+
+        root = pNet;
+        TextView netNote = text("PUBG'nin bağlandığı sunucuları ve bölgelerin gerçek pingini ölç. Doğru sonuç için VPN kapalıyken analiz et.", 12, TX2, false);
+        netNote.setPadding(dp(4), dp(4), dp(4), dp(4));
+        root.addView(netNote);
+
         LinearLayout tc = card();
         LinearLayout tt = new LinearLayout(this);
         tt.setOrientation(LinearLayout.VERTICAL);
@@ -203,7 +283,7 @@ public class MainActivity extends Activity {
         tc.setOnClickListener(v -> {
             try { openRegionTest(); } catch (Throwable t) { toast("Test açılamadı: " + t); }
         });
-        root.addView(tc, mlp(12));
+        root.addView(tc, mlp(8));
 
         LinearLayout sv2 = card();
         LinearLayout st3 = new LinearLayout(this);
@@ -226,11 +306,9 @@ public class MainActivity extends Activity {
         hc.addView(text("Analiz", 14, OR, true));
         hc.setOnClickListener(v -> openServerHistory());
         root.addView(hc, mlp(12));
+        root.addView(regionRow(), mlp(12));
 
-        reportBox = new LinearLayout(this);
-        reportBox.setOrientation(LinearLayout.VERTICAL);
-        root.addView(reportBox);
-
+        root = pSet;
         LinearLayout sc = card();
         LinearLayout st2 = new LinearLayout(this);
         st2.setOrientation(LinearLayout.VERTICAL);
@@ -239,7 +317,7 @@ public class MainActivity extends Activity {
         sc.addView(st2, new LinearLayout.LayoutParams(0, -2, 1));
         sc.addView(text("Ekle", 14, OR, true));
         sc.setOnClickListener(v -> addShortcut());
-        root.addView(sc, mlp(12));
+        root.addView(sc, mlp(4));
 
         // ayarlar
         root.addView(section("BOOST"));
@@ -293,7 +371,6 @@ public class MainActivity extends Activity {
                 new String[]{"Küçük", "Normal", "Büyük"}, new String[]{"small", "normal", "large"}, null), mlp(8));
         root.addView(choice("Panel saydamlığı", "ov_alpha", "70",
                 new String[]{"%30", "%50", "%70", "%90"}, new String[]{"30", "50", "70", "90"}, null), mlp(8));
-        root.addView(regionRow(), mlp(8));
 
         root.addView(section("OTOMATİK"));
         root.addView(choice("Oyundan çıkınca kapat", "autostop", "30",
@@ -307,7 +384,104 @@ public class MainActivity extends Activity {
         TextView note = text("Not: Root olmadan oyunun FPS'i doğrudan artırılamaz. Remna Boost RAM boşaltır, kesintileri engeller, ekranı en yüksek yenileme hızına sabitler ve oyun sırasında ping/sıcaklığı gösterir. Oyun dosyalarına dokunmaz (ban riski yok).", 12, TX3, false);
         note.setPadding(dp(4), dp(18), dp(4), 0);
         root.addView(note);
-        return sv;
+        renderProfiles();
+        selectTab(tab);
+        return outer;
+    }
+
+    /* ---------------- profiller ---------------- */
+    static final String[] PROFILE_NAMES = {"Performans", "Dengeli", "Serin"};
+    static final String[] PROFILE_IDS = {"perf", "balanced", "cool"};
+    static final String[] PROFILE_SUB = {"En yüksek FPS", "Stabil 60 FPS", "Az ısınma"};
+
+    void applyProfile(String id) {
+        SharedPreferences.Editor e = prefs.edit().putString("profile", id).putBoolean("kill", true);
+        switch (id) {
+            case "perf":
+                e.putString("gm_mode", "performance").putString("gm_scale", "off").putString("gm_fps", "off")
+                        .putString("hz_mode", "max").putString("anim_mode", "0.5").putString("cool_temp", "off");
+                break;
+            case "balanced":
+                e.putString("gm_mode", "performance").putString("gm_scale", "off").putString("gm_fps", "60")
+                        .putString("hz_mode", "max").putString("anim_mode", "0.5").putString("cool_temp", "43");
+                break;
+            default: // cool
+                e.putString("gm_mode", "battery").putString("gm_scale", "0.8").putString("gm_fps", "60")
+                        .putString("hz_mode", "60").putString("anim_mode", "0.5").putString("cool_temp", "40");
+        }
+        e.apply();
+        if (BoostService.running) Tweaks.reapply(this);
+        int y = scrolls[0].getScrollY();
+        setContentView(build());
+        refresh();
+        scrolls[0].post(() -> scrolls[0].scrollTo(0, y));
+        toast(nameOf(id) + " profili uygulandı" + (Sh.granted() ? "" : " (Android oyun modu için Shizuku gerekli)"));
+    }
+
+    String nameOf(String id) {
+        for (int i = 0; i < PROFILE_IDS.length; i++) if (PROFILE_IDS[i].equals(id)) return PROFILE_NAMES[i];
+        return "Özel";
+    }
+
+    void renderProfiles() {
+        profileRow.removeAllViews();
+        String cur = prefs.getString("profile", "custom");
+        for (int i = 0; i < 3; i++) {
+            boolean on = PROFILE_IDS[i].equals(cur);
+            LinearLayout c = new LinearLayout(this);
+            c.setOrientation(LinearLayout.VERTICAL);
+            c.setGravity(Gravity.CENTER);
+            c.setPadding(dp(6), dp(12), dp(6), dp(12));
+            GradientDrawable g = round(on ? 0x26F97316 : CARD, 16);
+            g.setStroke(dp(1), on ? OR : 0x0FFFFFFF);
+            c.setBackground(g);
+            c.addView(text(PROFILE_NAMES[i], 14, on ? Color.WHITE : TX, true));
+            c.addView(text(PROFILE_SUB[i], 11, on ? OR : TX3, false));
+            final String id = PROFILE_IDS[i];
+            c.setOnClickListener(v -> applyProfile(id));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            lp.leftMargin = dp(4); lp.rightMargin = dp(4);
+            profileRow.addView(c, lp);
+        }
+        if ("custom".equals(cur)) {
+            TextView t = text("Özel ayarlar kullanılıyor · Ayarlar sekmesinden düzenlendi", 11, TX3, false);
+            t.setPadding(dp(4), dp(6), 0, 0);
+            ((LinearLayout) profileRow.getParent()).addView(t, ((LinearLayout) profileRow.getParent()).indexOfChild(profileRow) + 1);
+        }
+    }
+
+    /* ---------------- kurulum kontrolü ---------------- */
+    void renderSetup() {
+        setupBox.removeAllViews();
+        java.util.List<String> miss = new java.util.ArrayList<>();
+        if (!Sh.granted()) miss.add("Shizuku çalışmıyor (FPS, gerçek ping, oyun modu)");
+        if (!Settings.canDrawOverlays(this)) miss.add("Oyun üstü panel izni");
+        if (!Boost.usageAllowed(this)) miss.add("Kullanım erişimi (otomatik kapanma, rapor)");
+        if (!Boost.dndAllowed(this) && !"off".equals(prefs.getString("dnd_mode", "priority"))) miss.add("Rahatsız etme erişimi");
+        boolean ok = miss.isEmpty();
+        statusPill.setText(ok ? "● Hazır" : "● Kurulum " + miss.size());
+        statusPill.setTextColor(ok ? GREEN : OR);
+        statusPill.setBackground(round(ok ? 0x1A34D399 : 0x1AF97316, 14));
+        if (ok) return;
+        LinearLayout c = card();
+        c.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable g = round(0x14F97316, 20);
+        g.setStroke(dp(1), 0x66F97316);
+        c.setBackground(g);
+        c.addView(text("Kurulumu tamamla", 15, TX, true));
+        for (String m : miss) {
+            TextView t = text("•  " + m, 12, TX2, false);
+            t.setPadding(0, dp(4), 0, 0);
+            c.addView(t);
+        }
+        TextView go = text("İzinlere git ›", 13, OR, true);
+        go.setPadding(0, dp(8), 0, 0);
+        c.addView(go);
+        c.setOnClickListener(v -> {
+            selectTab(2);
+            scrolls[2].post(() -> scrolls[2].scrollTo(0, permBox.getTop()));
+        });
+        setupBox.addView(c, mlp(12));
     }
 
     TextView stat(LinearLayout parent, String label) {
@@ -337,6 +511,7 @@ public class MainActivity extends Activity {
         sw.setOnCheckedChangeListener((b, on) -> {
             prefs.edit().putBoolean(key, on).apply();
             if (on && onEnable != null) onEnable.run();
+            if ("kill".equals(key)) markCustom();
             if (BoostService.running) Tweaks.reapply(this);
         });
         l.addView(sw);
@@ -361,6 +536,7 @@ public class MainActivity extends Activity {
             new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(title)
                     .setSingleChoiceItems(labels, sel, (d, w) -> {
                         prefs.edit().putString(key, values[w]).apply();
+                        if (!key.startsWith("ov_") && !"autostop".equals(key) && !"dnd_mode".equals(key)) markCustom();
                         sub.setText(labels[w]);
                         d.dismiss();
                         if (!values[w].equals("off") && onEnable != null) onEnable.run();
@@ -386,6 +562,13 @@ public class MainActivity extends Activity {
                 .setMessage("FPS göstergesi ve otomatik ADB izni için Shizuku uygulaması gerekir.\n\n1) Shizuku'yu kur (Play Store / GitHub)\n2) Shizuku'yu aç → 'Kablosuz hata ayıklama ile başlat'\n3) Remna Boost'a dönüp izin ver\n\nTelefon yeniden başlarsa Shizuku'yu tekrar başlatman gerekir.")
                 .setPositiveButton("Shizuku'yu indir", (d, w) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest"))))
                 .setNegativeButton("Kapat", null).show();
+    }
+
+    void markCustom() {
+        if (!"custom".equals(prefs.getString("profile", "custom"))) {
+            prefs.edit().putString("profile", "custom").apply();
+            profileRow.post(() -> { int y = scrolls[2].getScrollY(); setContentView(build()); refresh(); scrolls[2].post(() -> scrolls[2].scrollTo(0, y)); });
+        }
     }
 
     void askAdb() { if (!Tweaks.secureAllowed(this)) showAdbHelp(); }
@@ -732,6 +915,15 @@ public class MainActivity extends Activity {
                 });
             }).start();
         }
+    }
+
+    /** Ping bölgesi ayarındaki host → ServerLog bölge adı. */
+    static String regionOfHost(String host) {
+        for (String[] r : REGIONS) if (r[1].equals(host)) {
+            if (r[0].startsWith("Hindistan")) return "Hindistan/Güney Asya";
+            return r[0];
+        }
+        return null;
     }
 
     String regionName() {

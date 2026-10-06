@@ -54,7 +54,7 @@ final class Perf {
 
     /** İşlemci sıcaklığı (°C), Shizuku ile thermal zone'lardan; okunamazsa -1. */
     static float cpuTemp() {
-        if (System.currentTimeMillis() - cpuAt < 3000) return cpuCache;
+        if (System.currentTimeMillis() - cpuAt < 5000) return cpuCache;
         cpuAt = System.currentTimeMillis();
         float best = -1;
         String out = Sh.granted()

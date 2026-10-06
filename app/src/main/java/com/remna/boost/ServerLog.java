@@ -101,6 +101,29 @@ final class ServerLog {
         return "";
     }
 
+    /**
+     * Panel pingi için hedef: kayıtlı PUBG veri merkezi IP'lerinden (Tencent/Azure) VPN'siz ICMP yanıtı vermiş olanlar.
+     * Tercih edilen bölgede en düşük pingli olan; yoksa genel en iyisi. {ip, bölge} ya da null.
+     */
+    static String[] pingTarget(Context c, String preferRegion) {
+        JSONObject log = load(c);
+        String bestIp = null, bestReg = null, anyIp = null, anyReg = null;
+        int best = Integer.MAX_VALUE, any = Integer.MAX_VALUE;
+        for (Iterator<String> it = log.keys(); it.hasNext(); ) {
+            String ip = it.next();
+            JSONObject e = log.optJSONObject(ip);
+            String as = e.optString("as");
+            boolean dc = as.contains("132203") || as.contains("8075") || "Tencent Cloud".equals(knownNet(ip));
+            int p = e.optInt("ping", -1);
+            if (!dc || p <= 0 || "tcp".equals(e.optString("pingHow", e.optString("how")))) continue;
+            String reg = region(e.optString("cc"));
+            if (preferRegion != null && preferRegion.equals(reg) && p < best) { best = p; bestIp = ip; bestReg = reg; }
+            if (p < any) { any = p; anyIp = ip; anyReg = reg; }
+        }
+        if (bestIp != null) return new String[]{bestIp, bestReg};
+        return anyIp != null ? new String[]{anyIp, anyReg} : null;
+    }
+
     /** Ülke koduna göre PUBG lobi bölgesi. */
     static String region(String cc) {
         if (cc == null || cc.isEmpty()) return "?";

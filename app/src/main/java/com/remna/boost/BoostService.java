@@ -74,6 +74,7 @@ public class BoostService extends Service {
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(1, n);
 
+        if (Boost.prefs(this).getBoolean("tw_applied", false)) Tweaks.restore(this); // önceki oturum çöktüyse
         Tweaks.apply(this);
         if (!Boost.prefs(this).getString("dnd_mode", "priority").equals("off")) Boost.dndOn(this);
         if (!Boost.prefs(this).getString("ov_mode", "full").equals("off") && Settings.canDrawOverlays(this)) showPanel();
@@ -87,10 +88,10 @@ public class BoostService extends Service {
         new Thread(() -> {
             while (running) {
                 lastFps = (game != null && Boost.prefs(this).getBoolean("fps", true)) ? Sh.fps(game) : -1;
-                if (lastFps < 0 && Sh.granted() && game != null && ++fpsFails == 15) // ~15 sn ölçülemezse tanılama kaydet
+                if (lastFps < 0 && Sh.granted() && game != null && ++fpsFails == 8) // ~15 sn ölçülemezse tanılama kaydet
                     Boost.prefs(this).edit().putString("fps_diag", Sh.fpsDiag(game)).apply();
                 lastCpu = Perf.cpuTemp();
-                try { Thread.sleep(1000); } catch (InterruptedException e) { return; }
+                try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
             }
         }).start();
         return START_NOT_STICKY;
@@ -132,7 +133,15 @@ public class BoostService extends Service {
                     }
                 } catch (Exception ignored) {}
             }
-            // 2) Yedek: seçili bölgeye yaklaşık ölçüm
+            // 2) Maç sunucusu görünmüyorsa: kayıtlı PUBG veri merkezine (seçili bölge) ICMP
+            if (v < 0 && Sh.granted()) {
+                String[] t = ServerLog.pingTarget(this, MainActivity.regionOfHost(Boost.prefs(this).getString("ping_host", "")));
+                if (t != null) {
+                    int r = Sh.icmp(t[0]);
+                    if (r > 5) { v = r; pingSrc = t[1]; }
+                }
+            }
+            // 3) Son yedek: bölgeye yaklaşık HTTP ölçümü
             if (v < 0) {
                 String host = Boost.prefs(this).getString("ping_host", MainActivity.REGIONS[0][1]);
                 v = Boost.ping(host, 443);
@@ -154,7 +163,8 @@ public class BoostService extends Service {
                 else if (f < 0) { fpsTv.setText("— FPS"); fpsTv.setTextColor(0xFF94A3B8); }
                 else { fpsTv.setText(f + " FPS"); fpsTv.setTextColor(f >= 55 ? 0xFF34D399 : f >= 30 ? 0xFFFBBF24 : 0xFFEF4444); }
                 int p = lastPing;
-                pingTv.setText(p < 0 ? "— ms" : ("≈".equals(pingSrc) ? "≈" : "") + p + " ms");
+                String tag = "≈".equals(pingSrc) ? "≈" : "oyun".equals(pingSrc) || pingSrc.isEmpty() ? "" : shortReg(pingSrc) + " ";
+                pingTv.setText(p < 0 ? "— ms" : tag + p + " ms");
                 pingTv.setTextColor(p < 0 ? 0xFFEF4444 : p < 80 ? 0xFF34D399 : p < 150 ? 0xFFFBBF24 : 0xFFEF4444);
                 ramTv.setText(Boost.fmtGb(Boost.availRam(BoostService.this)));
                 float t = Boost.batteryTemp(BoostService.this);
@@ -205,6 +215,18 @@ public class BoostService extends Service {
         nm.notify(2, new Notification.Builder(this, "cool").setSmallIcon(R.drawable.ic_stat).setColor(0xFFEF4444)
                 .setContentTitle(String.format(java.util.Locale.US, "Telefon ısındı (%.0f°C)", t))
                 .setContentText("Soğutma modu: ekran 60 Hz'e düşürüldü").setAutoCancel(true).build());
+    }
+
+    static String shortReg(String r) {
+        switch (r) {
+            case "Avrupa": return "EU";
+            case "Orta Doğu": return "ME";
+            case "Asya": return "AS";
+            case "KRJP": return "KR";
+            case "Kuzey Amerika": return "NA";
+            case "Güney Amerika": return "SA";
+            default: return "";
+        }
     }
 
     TextView chip(String s) {

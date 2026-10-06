@@ -266,7 +266,7 @@ final class Boost {
                     if (d < 1400) ms = (int) d; // hızlı ret = RST yanıtı
                 } catch (Exception ignored) {}
                 // 25 ms altı "yanıt" yerel güvenlik duvarının sahte RST'si (gerçek sunucuya fiziksel olarak imkânsız)
-                if (ms >= 25 && ms < 900 && (best < 0 || ms < best)) best = ms;
+                if (ms >= 60 && ms < 900 && (best < 0 || ms < best)) best = ms;
             }
             if (best > 0) break;
         }
