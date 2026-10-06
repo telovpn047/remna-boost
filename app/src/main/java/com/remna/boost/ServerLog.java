@@ -149,16 +149,17 @@ final class ServerLog {
             r.vpn = e.optBoolean("vpn");
             r.direct = e.optBoolean("direct");
             r.ping = e.optInt("ping", -1);
+            r.how = e.optString("how", "");
             out.add(r);
         }
         return out;
     }
 
-    static void putPing(Context c, String ip, int ms) {
+    static void putPing(Context c, String ip, int ms, String how) {
         JSONObject log = load(c);
         JSONObject e = log.optJSONObject(ip);
         if (e == null) return;
-        try { e.put("ping", ms); e.put("pingAt", System.currentTimeMillis()); } catch (Exception ignored) {}
+        try { e.put("ping", ms); e.put("how", how); e.put("pingAt", System.currentTimeMillis()); } catch (Exception ignored) {}
         save(c, log);
     }
 }

@@ -440,7 +440,7 @@ public class MainActivity extends Activity {
                     r.how = "tcp";
                 }
                 r.ping = v;
-                ServerLog.putPing(this, r.ip, v);
+                ServerLog.putPing(this, r.ip, v, r.how);
             });
             ex.shutdown();
             try { ex.awaitTermination(120, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
@@ -463,23 +463,25 @@ public class MainActivity extends Activity {
         java.util.Map<String, java.util.List<Integer>> reg = new java.util.TreeMap<>();
         java.util.Map<String, Integer> regCount = new java.util.TreeMap<>();
         for (ServerLog.Row r : rows) {
-            if (udp > 0 && !r.proto.equals("UDP")) continue;
-            Integer c = regCount.get(r.region);
-            regCount.put(r.region, c == null ? 1 : c + 1);
-            if (r.ping > 0) {
+            // bölge tahmini: yalnız PUBG'nin veri merkezleri (Tencent AS132203, Azure AS8075); CDN'ler yanıltır
+            boolean dc = r.as.contains("132203") || r.as.contains("8075") || r.as.startsWith("Tencent") || r.as.startsWith("Microsoft");
+            if (!dc || "?".equals(r.region)) continue;
+            if (r.proto.equals("UDP")) { Integer c = regCount.get(r.region); regCount.put(r.region, c == null ? 1 : c + 1); }
+            else if (!regCount.containsKey(r.region)) regCount.put(r.region, 0);
+            if (r.ping > 0 && !"tcp".equals(r.how)) {
                 if (!reg.containsKey(r.region)) reg.put(r.region, new java.util.ArrayList<>());
                 reg.get(r.region).add(r.ping);
             }
         }
-        sb.append("== BÖLGELER (maç sunucuları) ==\n");
+        sb.append("== BÖLGELER (PUBG veri merkezleri, ICMP) ==\n");
         String bestReg = null;
         int bestMed = Integer.MAX_VALUE;
         for (String k : regCount.keySet()) {
             java.util.List<Integer> l = reg.get(k);
-            if (l == null || l.isEmpty()) { sb.append(String.format(java.util.Locale.US, "%-18s %2d sunucu · ping yok%n", k, regCount.get(k))); continue; }
+            if (l == null || l.isEmpty()) { sb.append(String.format(java.util.Locale.US, "%-18s %2d yoklama · ping ölçülemedi (oyunda dene)%n", k, regCount.get(k))); continue; }
             java.util.Collections.sort(l);
             int med = l.get(l.size() / 2), min = l.get(0);
-            sb.append(String.format(java.util.Locale.US, "%-18s %2d sunucu · en iyi %d ms · ortanca %d ms%n", k, regCount.get(k), min, med));
+            sb.append(String.format(java.util.Locale.US, "%-18s %2d yoklama · en iyi %d ms · ortanca %d ms%n", k, regCount.get(k), min, med));
             if (med < bestMed) { bestMed = med; bestReg = k; }
         }
         if (bestReg != null) sb.append("\n➜ Önerilen PUBG bölgesi: ").append(bestReg).append(" (ortanca ").append(bestMed).append(" ms)\n");
