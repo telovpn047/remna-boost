@@ -50,7 +50,7 @@ final class Perf {
     /* ---------------- sıcaklık ---------------- */
 
     static long cpuAt;
-    /** Okunan sensör adında "cpu" varsa "CPU", yoksa genel "Sensör" (yanlış etiketleme yapılmaz). */
+    /** Okunan sensör adında "cpu" varsa "CPU", yoksa genel L.t("Sensör") (yanlış etiketleme yapılmaz). */
     static volatile String cpuLabel = "CPU";
     static float cpuCache = -1;
 
@@ -76,7 +76,7 @@ final class Perf {
             } catch (NumberFormatException ignored) {}
         }
         cpuCache = best;
-        cpuLabel = bestType.contains("cpu") ? "CPU" : "Sensör";
+        cpuLabel = bestType.contains("cpu") ? "CPU" : L.t("Sensör");
         return best;
     }
 

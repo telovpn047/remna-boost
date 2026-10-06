@@ -51,6 +51,7 @@ public class BoostService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
+        L.init(Boost.prefs(this).getString("lang", ""));
         String g = intent != null ? intent.getStringExtra("game") : null;
         if (running && notif != null) { // zaten açık: ikinci panel/döngü başlatma
             if (g != null) game = g;
@@ -61,15 +62,15 @@ public class BoostService extends Service {
         game = g;
         running = true;
         NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel("boost", "Oyun modu", NotificationManager.IMPORTANCE_LOW));
+        nm.createNotificationChannel(new NotificationChannel("boost", L.t("Oyun modu"), NotificationManager.IMPORTANCE_LOW));
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, BoostService.class).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE);
         PendingIntent open = PendingIntent.getActivity(this, 2, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
         Notification n = new Notification.Builder(this, "boost")
                 .setSmallIcon(R.drawable.ic_stat).setColor(0xFFF97316)
-                .setContentTitle("Oyun modu açık")
-                .setContentText(Sh.granted() ? "Ping, FPS ve sunucular izleniyor" : "Ping, RAM ve sıcaklık izleniyor")
+                .setContentTitle(L.t("Oyun modu açık"))
+                .setContentText(Sh.granted() ? L.t("Ping, FPS ve sunucular izleniyor") : L.t("Ping, RAM ve sıcaklık izleniyor"))
                 .setOngoing(true).setContentIntent(open)
-                .addAction(new Notification.Action.Builder(null, "Kapat", stop).build()).build();
+                .addAction(new Notification.Action.Builder(null, L.t("Kapat"), stop).build()).build();
         notif = n;
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(1, n);
@@ -196,10 +197,10 @@ public class BoostService extends Service {
 
     void notifyCool(float t, Thermal.State st) {
         NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel("cool", "Soğutma", NotificationManager.IMPORTANCE_DEFAULT));
+        nm.createNotificationChannel(new NotificationChannel("cool", L.t("Soğutma"), NotificationManager.IMPORTANCE_DEFAULT));
         nm.notify(2, new Notification.Builder(this, "cool").setSmallIcon(R.drawable.ic_stat).setColor(0xFFEF4444)
                 .setContentTitle(String.format(java.util.Locale.US, "%s · %.0f°C", Thermal.label(st), t))
-                .setContentText("Ekran 60 Hz'e düşürüldü; soğuyunca kademeli olarak geri yükselecek").setAutoCancel(true).build());
+                .setContentText(L.t("Ekran 60 Hz'e düşürüldü; soğuyunca kademeli olarak geri yükselecek")).setAutoCancel(true).build());
     }
 
     static String shortReg(String r) {
@@ -237,9 +238,9 @@ public class BoostService extends Service {
         pingTv.setText(p < 0 ? "— ms" : tag + p + " ms");
         pingTv.setTextColor(p < 0 ? C_BAD : p < 80 ? C_OK : p < 150 ? C_WARN : C_BAD);
         PingStats ps = Live.pingStats();
-        jitTv.setText(ps.empty() ? "" : "dalg. " + ps.jitter() + " ms");
+        jitTv.setText(ps.empty() ? "" : L.t("dalg. ") + ps.jitter() + " ms");
         jitTv.setTextColor(ps.jitter() > 15 ? C_WARN : C_DIM);
-        lossTv.setText(ps.sent == 0 ? "" : "kayıp %" + ps.lossPct());
+        lossTv.setText(ps.sent == 0 ? "" : L.t("kayıp %") + ps.lossPct());
         lossTv.setTextColor(ps.lossPct() > 2 ? C_BAD : C_DIM);
         ramTv.setText(Boost.fmtGb(Boost.availRam(this)));
         ramTv.setTextColor(C_TX);
@@ -248,7 +249,7 @@ public class BoostService extends Service {
         cpuTv.setTextColor(cpu < 60 ? C_DIM : cpu < 75 ? C_WARN : C_BAD);
         float t = Boost.batteryTemp(this);
         String chg = Perf.chargeState(this);
-        tempTv.setText(String.format(java.util.Locale.US, "Pil %.0f°", t) + (chg.isEmpty() ? "" : " " + chg));
+        tempTv.setText(String.format(java.util.Locale.US, L.t("Pil %.0f°"), t) + (chg.isEmpty() ? "" : " " + chg));
         tempTv.setTextColor(t < 38 ? C_TX : t < 43 ? C_WARN : C_BAD);
     }
 

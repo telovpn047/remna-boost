@@ -76,10 +76,10 @@ final class Thermal {
 
     static String label(State s) {
         switch (s) {
-            case WARM: return "Ilık";
-            case HOT: return "Sıcak";
-            case PROTECT: return "Termal koruma";
-            default: return "Normal";
+            case WARM: return L.t("Ilık");
+            case HOT: return L.t("Sıcak");
+            case PROTECT: return L.t("Termal koruma");
+            default: return L.t("Normal");
         }
     }
 }

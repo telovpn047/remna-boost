@@ -70,13 +70,14 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = Boost.prefs(this);
+        L.init(prefs.getString("lang", ""));
         if (!BoostService.running && prefs.getBoolean("tw_applied", false)) { Tweaks.restore(this); Boost.dndOff(this); }
         String ph = prefs.getString("ping_host", "");
         if (ph.startsWith("ec2.")) prefs.edit().putString("ping_host", "s3." + ph.substring(4)).apply();
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
         try {
             rikka.shizuku.Shizuku.addRequestPermissionResultListener((code, res) -> h.post(() -> {
-                if (res == PackageManager.PERMISSION_GRANTED) { Tweaks.secureAllowed(this); toast("Shizuku bağlandı"); }
+                if (res == PackageManager.PERMISSION_GRANTED) { Tweaks.secureAllowed(this); toast(L.t("Shizuku bağlandı")); }
                 renderPerms();
                 renderSetup();
             }));
@@ -233,7 +234,7 @@ public class MainActivity extends Activity {
         TextView title = text("REMNA BOOST", 17, TX, true);
         title.setLetterSpacing(0.08f);
         tt.addView(title);
-        tt.addView(text("Oyun Performans Merkezi", 11, TX2, false));
+        tt.addView(text(L.t("Oyun Performans Merkezi"), 11, TX2, false));
         top.addView(tt, new LinearLayout.LayoutParams(0, -2, 1));
         statusPill = text("…", 11, TX, true);
         statusPill.setPadding(dp(10), dp(5), dp(10), dp(5));
@@ -249,9 +250,9 @@ public class MainActivity extends Activity {
         LinearLayout nav = new LinearLayout(this);
         nav.setPadding(dp(10), dp(8), dp(10), dp(10));
         nav.setBackgroundColor(0xFF0B0F1A);
-        String[] names = {"ANA", "AĞ", "PERFORMANS", "AYARLAR"};
+
         for (int i = 0; i < TABS; i++) {
-            TextView t = text(names[i], 11, TX3, true);
+            TextView t = text(L.tab(i), 11, TX3, true);
             t.setLetterSpacing(0.08f);
             t.setGravity(Gravity.CENTER);
             t.setPadding(0, dp(11), 0, dp(11));
@@ -308,7 +309,7 @@ public class MainActivity extends Activity {
         LinearLayout st = new LinearLayout(this);
         fpsBig = metric(st, "FPS");
         pingTv = metric(st, "PING");
-        tempTv = metric(st, "SICAKLIK");
+        tempTv = metric(st, L.t("SICAKLIK"));
         root.addView(st, mlp(8));
         ramTv = new TextView(this); // RAM ana ekranda değil, sağlık kartında
 
@@ -320,10 +321,10 @@ public class MainActivity extends Activity {
         hr.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout hl = new LinearLayout(this);
         hl.setOrientation(LinearLayout.VERTICAL);
-        TextView ht = text("OYUN SAĞLIĞI", 11, TX3, true);
+        TextView ht = text(L.t("OYUN SAĞLIĞI"), 11, TX3, true);
         ht.setLetterSpacing(0.1f);
         hl.addView(ht);
-        healthLabel = text("ÖLÇÜLÜYOR", 16, TX, true);
+        healthLabel = text(L.t("ÖLÇÜLÜYOR"), 16, TX, true);
         hl.addView(healthLabel);
         hr.addView(hl, new LinearLayout.LayoutParams(0, -2, 1));
         healthScore = text("—", 34, TX, true);
@@ -336,7 +337,7 @@ public class MainActivity extends Activity {
         hc.addView(healthBody, mlp(8));
         root.addView(hc, mlp(12));
 
-        TextView ps = section("PROFİL");
+        TextView ps = section(L.t("PROFİL"));
         root.addView(ps);
         profileRow = new LinearLayout(this);
         root.addView(profileRow);
@@ -345,9 +346,9 @@ public class MainActivity extends Activity {
         setupBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(setupBox);
 
-        root.addView(section("HIZLI ERİŞİM"));
+        root.addView(section(L.t("HIZLI ERİŞİM")));
         LinearLayout qa = new LinearLayout(this);
-        String[][] q = {{"Performans", "2"}, {"Ağ", "1"}, {"Panel", "p"}};
+        String[][] q = {{L.t("Performans"), "2"}, {L.t("Ağ"), "1"}, {L.t("Panel"), "p"}};
         for (String[] it : q) {
             TextView t = text(it[0], 13, TX, true);
             t.setGravity(Gravity.CENTER);
@@ -361,19 +362,34 @@ public class MainActivity extends Activity {
         root.addView(qa);
     }
 
+    void chooseLanguage() {
+        String cur = prefs.getString("lang", "");
+        String[] names = new String[L.CODES.length];
+        int sel = 0;
+        for (int i = 0; i < names.length; i++) { names[i] = L.name(L.CODES[i]); if (L.CODES[i].equals(cur)) sel = i; }
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(L.t("Dil"))
+                .setSingleChoiceItems(names, sel, (d, w) -> {
+                    prefs.edit().putString("lang", L.CODES[w]).apply();
+                    L.init(L.CODES[w]);
+                    d.dismiss();
+                    setContentView(build());
+                    refresh();
+                }).show();
+    }
+
     void chooseOverlayMode() {
-        String[] l = {"Kapalı", "Minimal · FPS • ping", "Ağ · ping, dalgalanma, kayıp", "Performans · FPS, RAM, CPU, pil", "Tam · hepsi + kare süresi"};
+        String[] l = {L.t("Kapalı"), L.t("Minimal · FPS • ping"), L.t("Ağ · ping, dalgalanma, kayıp"), L.t("Performans · FPS, RAM, CPU, pil"), L.t("Tam · hepsi + kare süresi")};
         String[] v = {"off", "minimal", "network", "performance", "full"};
         String cur = prefs.getString("ov_mode", "full");
         if ("ping".equals(cur)) cur = "minimal";
         int sel = 0;
         for (int i = 0; i < v.length; i++) if (v[i].equals(cur)) sel = i;
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Oyun üstü panel")
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(L.t("Oyun üstü panel"))
                 .setSingleChoiceItems(l, sel, (d, w) -> {
                     prefs.edit().putString("ov_mode", v[w]).apply();
                     d.dismiss();
                     if (!v[w].equals("off")) askOverlay();
-                    if (BoostService.running) toast("Panel bir sonraki oyun modunda değişir");
+                    if (BoostService.running) toast(L.t("Panel bir sonraki oyun modunda değişir"));
                 }).show();
     }
 
@@ -399,7 +415,7 @@ public class MainActivity extends Activity {
         healthScore.setTextColor(col);
         healthLabel.setText(Health.label(hh.total));
         healthParts.removeAllViews();
-        String[] pl = {"FPS", "AĞ", "ISI", "RAM"};
+        String[] pl = {"FPS", L.t("AĞ"), L.t("ISI"), "RAM"};
         int[] pv = {hh.fps, hh.net, hh.thermal, hh.mem};
         for (int i = 0; i < 4; i++) {
             LinearLayout c = new LinearLayout(this);
@@ -417,31 +433,31 @@ public class MainActivity extends Activity {
         StringBuilder sb = new StringBuilder();
         for (String is : hh.issues) sb.append("⚠ ").append(is).append('\n');
         for (String ok : hh.oks) sb.append("✓ ").append(ok).append('\n');
-        if (hh.fps < 0) sb.append(live ? "FPS ölçülemiyor bu cihazda (Gelişmiş → Shizuku)\n" : "FPS oyun sırasında ölçülür\n");
-        if (hh.rec != null) sb.append("\nÖneri: ").append(hh.rec);
+        if (hh.fps < 0) sb.append(live ? L.t("FPS ölçülemiyor bu cihazda (Gelişmiş → Shizuku)\n") : L.t("FPS oyun sırasında ölçülür\n"));
+        if (hh.rec != null) sb.append(L.t("\nÖneri: ")).append(hh.rec);
         healthBody.setText(sb.toString().trim());
-        gameSub.setText(game == null ? "" : (live ? "● OYUNDA" : "● HAZIR") + "  ·  " + nameOf(prefs.getString("profile", "custom")));
+        gameSub.setText(game == null ? "" : (live ? L.t("● OYUNDA") : L.t("● HAZIR")) + "  ·  " + nameOf(prefs.getString("profile", "custom")));
         gameSub.setTextColor(live ? OR : GREEN);
     }
 
     /* ================= AĞ ================= */
     void buildNetwork(LinearLayout p) {
         root = p;
-        TextView netNote = text("En düşük ve en stabil mevcut bölgeyi analiz eder. Fiziksel gecikmeyi değiştirmez; doğru sonuç için VPN kapalıyken ölç.", 12, TX2, false);
+        TextView netNote = text(L.t("En düşük ve en stabil mevcut bölgeyi analiz eder. Fiziksel gecikmeyi değiştirmez; doğru sonuç için VPN kapalıyken ölç."), 12, TX2, false);
         netNote.setPadding(dp(4), dp(4), dp(4), dp(8));
         root.addView(netNote);
-        root.addView(navCard("Tüm bölgeleri test et", "Ortanca · dalgalanma · kayıp · kararlılık · skor", v -> {
+        root.addView(navCard(L.t("Tüm bölgeleri test et"), L.t("Ortanca · dalgalanma · kayıp · kararlılık · skor"), v -> {
             try { openRegionTest(); } catch (RuntimeException t) { toast("Test açılamadı: " + t.getMessage()); }
         }));
         root.addView(regionRow(), mlp(8));
-        root.addView(section("SUNUCULAR"));
-        LinearLayout sv2 = navCard("Oyun sunucusu", null, v -> openServerInfo());
-        srvSub = text("Maça girince PUBG'nin bağlandığı sunucu burada görünür", 12, TX2, false);
+        root.addView(section(L.t("SUNUCULAR")));
+        LinearLayout sv2 = navCard(L.t("Oyun sunucusu"), null, v -> openServerInfo());
+        srvSub = text(L.t("Maça girince PUBG'nin bağlandığı sunucu burada görünür"), 12, TX2, false);
         ((LinearLayout) sv2.getChildAt(0)).addView(srvSub);
         root.addView(sv2);
-        root.addView(navCard("Ağ geçmişi", "Bugün · 7 gün · 30 gün · bölge istatistikleri", v -> openNetHistory(1)), mlp(8));
-        LinearLayout hc = navCard("Sunucu geçmişi", null, v -> openServerHistory());
-        histSub = text("Oynadıkça bağlanılan sunucular bu cihazda saklanır", 12, TX2, false);
+        root.addView(navCard(L.t("Ağ geçmişi"), L.t("Bugün · 7 gün · 30 gün · bölge istatistikleri"), v -> openNetHistory(1)), mlp(8));
+        LinearLayout hc = navCard(L.t("Sunucu geçmişi"), null, v -> openServerHistory());
+        histSub = text(L.t("Oynadıkça bağlanılan sunucular bu cihazda saklanır"), 12, TX2, false);
         ((LinearLayout) hc.getChildAt(0)).addView(histSub);
         root.addView(hc, mlp(8));
     }
@@ -454,7 +470,7 @@ public class MainActivity extends Activity {
         root.addView(perfBox);
         reportBox = new LinearLayout(this);
         reportBox.setOrientation(LinearLayout.VERTICAL);
-        root.addView(section("SON OTURUM RAPORU"));
+        root.addView(section(L.t("SON OTURUM RAPORU")));
         root.addView(reportBox);
     }
 
@@ -498,18 +514,18 @@ public class MainActivity extends Activity {
         if (perfBox == null) return;
         perfBox.removeAllViews();
         boolean live = BoostService.running;
-        TextView hdr = text(live ? "CANLI · oyun modu açık" : "Oyun modu kapalı · son oturum verileri", 12, live ? OR : TX2, true);
+        TextView hdr = text(live ? L.t("CANLI · oyun modu açık") : L.t("Oyun modu kapalı · son oturum verileri"), 12, live ? OR : TX2, true);
         hdr.setPadding(dp(4), dp(4), 0, dp(6));
         perfBox.addView(hdr);
         int[] fs = Live.fpsStats();
         int f = Live.fps;
         perfBox.addView(statGrid(new String[][]{
-                {"FPS", live && f >= 0 ? String.valueOf(f) : fs == null ? "Yok" : "—"},
-                {"ORT", fs == null ? "—" : String.valueOf(fs[0])},
-                {"%1 DÜŞÜK", fs == null ? "—" : String.valueOf(fs[1])},
-                {"KARE", live && Live.ftAvg > 0 ? String.format(java.util.Locale.US, "%.1f ms", Live.ftAvg) : live && f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "—"}}));
+                {"FPS", live && f >= 0 ? String.valueOf(f) : fs == null ? L.t("Yok") : "—"},
+                {L.t("ORT"), fs == null ? "—" : String.valueOf(fs[0])},
+                {L.t("%1 DÜŞÜK"), fs == null ? "—" : String.valueOf(fs[1])},
+                {L.t("KARE"), live && Live.ftAvg > 0 ? String.format(java.util.Locale.US, "%.1f ms", Live.ftAvg) : live && f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "—"}}));
         if (fs == null) {
-            TextView n = text(Sh.granted() ? "FPS bu oturumda ölçülemedi." : "FPS ölçümü bu cihazda kullanılamıyor (Gelişmiş → Shizuku).", 11, TX3, false);
+            TextView n = text(Sh.granted() ? L.t("FPS bu oturumda ölçülemedi.") : L.t("FPS ölçümü bu cihazda kullanılamıyor (Gelişmiş → Shizuku)."), 11, TX3, false);
             n.setPadding(dp(4), dp(6), 0, 0);
             perfBox.addView(n);
         }
@@ -519,7 +535,7 @@ public class MainActivity extends Activity {
         float cpu = live ? Live.cpu : -1;
         LinearLayout g2 = statGrid(new String[][]{
                 {"RAM", Boost.fmtGb(tot - av).replace(" GB", "") + " / " + Boost.fmtGb(tot)},
-                {"PİL", String.format(java.util.Locale.US, "%.0f°C · %%%d", Boost.batteryTemp(this), lvl)},
+                {L.t("PİL"), String.format(java.util.Locale.US, "%.0f°C · %%%d", Boost.batteryTemp(this), lvl)},
                 {Perf.cpuLabel.toUpperCase(), cpu > 0 ? String.format(java.util.Locale.US, "%.0f°C", cpu) : "—"}});
         perfBox.addView(g2, mlp(8));
         int[] fps = Live.fpsSeries(), pg = Live.pingSeries(), tp = Live.tempSeries();
@@ -531,16 +547,16 @@ public class MainActivity extends Activity {
             boolean anyFt = false;
             for (int x : ft) if (x > 0) { anyFt = true; break; }
             if (anyFt) {
-                perfBox.addView(graphCard("KARE SÜRESİ (en yavaş kare)", ft, 0xFFB58CFF, "ms"), mlp(8));
-                TextView stt = text("Takılma (25 ms+): " + Live.stutterTotal + "   ·   Ağır kare (33 ms+): " + Live.heavyTotal
-                        + (Live.heavyTotal == 0 && Live.stutterTotal < 5 ? "   ✓ akıcı" : ""), 12, Live.heavyTotal > 10 ? YEL : TX2, false);
+                perfBox.addView(graphCard(L.t("KARE SÜRESİ (en yavaş kare)"), ft, 0xFFB58CFF, "ms"), mlp(8));
+                TextView stt = text(L.t("Takılma (25 ms+): ") + Live.stutterTotal + L.t("   ·   Ağır kare (33 ms+): ") + Live.heavyTotal
+                        + (Live.heavyTotal == 0 && Live.stutterTotal < 5 ? L.t("   ✓ akıcı") : ""), 12, Live.heavyTotal > 10 ? YEL : TX2, false);
                 stt.setPadding(dp(4), dp(6), 0, 0);
                 perfBox.addView(stt);
             }
             perfBox.addView(graphCard("PING", pg, 0xFF6EA8FE, "ms"), mlp(8));
-            perfBox.addView(graphCard("SICAKLIK", tp, YEL, "°C"), mlp(8));
+            perfBox.addView(graphCard(L.t("SICAKLIK"), tp, YEL, "°C"), mlp(8));
         } else {
-            TextView n = text("Grafikler oyun modu açıkken oluşur ve yalnız bellekte tutulur.", 11, TX3, false);
+            TextView n = text(L.t("Grafikler oyun modu açıkken oluşur ve yalnız bellekte tutulur."), 11, TX3, false);
             n.setPadding(dp(4), dp(10), 0, 0);
             perfBox.addView(n);
         }
@@ -549,44 +565,45 @@ public class MainActivity extends Activity {
     /* ================= AYARLAR ================= */
     void buildSettings(LinearLayout p) {
         root = p;
-        root.addView(section("PERFORMANS"));
+        root.addView(section(L.t("PERFORMANS")));
         java.util.List<Integer> rates = Tweaks.refreshRates(this);
         String[] hzL = new String[rates.size() + 2], hzV = new String[rates.size() + 2];
-        hzL[0] = "Otomatik (sistem yönetsin)"; hzV[0] = "off";
-        hzL[1] = "En yüksek (" + Math.round(Tweaks.maxRefresh(this)) + " Hz)"; hzV[1] = "max";
+        hzL[0] = L.t("Otomatik (sistem yönetsin)"); hzV[0] = "off";
+        hzL[1] = L.t("En yüksek (") + Math.round(Tweaks.maxRefresh(this)) + " Hz)"; hzV[1] = "max";
         for (int i = 0; i < rates.size(); i++) { hzL[i + 2] = rates.get(i) + " Hz"; hzV[i + 2] = String.valueOf(rates.get(i)); }
-        root.addView(choice("Yenileme hızı", "hz_mode", "max", hzL, hzV, this::askAdb));
-        root.addView(choice("Arka plan temizliği", "cleanup", "smart",
-                new String[]{"Akıllı (yalnız RAM azsa)", "Agresif (her zaman)", "Kapalı"},
+        root.addView(choice(L.t("Yenileme hızı"), "hz_mode", "max", hzL, hzV, this::askAdb));
+        root.addView(choice(L.t("Arka plan temizliği"), "cleanup", "smart",
+                new String[]{L.t("Akıllı (yalnız RAM azsa)"), L.t("Agresif (her zaman)"), L.t("Kapalı")},
                 new String[]{"smart", "aggressive", "off"}, null), mlp(8));
-        root.addView(choice("Termal koruma", "thermal", "standard",
-                new String[]{"Standart · 40 / 42 / 44°C", "Hassas · 38 / 40 / 42°C", "Kapalı"},
+        root.addView(choice(L.t("Termal koruma"), "thermal", "standard",
+                new String[]{L.t("Standart · 40 / 42 / 44°C"), L.t("Hassas · 38 / 40 / 42°C"), L.t("Kapalı")},
                 new String[]{"standard", "sensitive", "off"}, null), mlp(8));
         boolean ts = Tweaks.touchSupported(this);
-        root.addView(toggle("Dokunma optimizasyonu", ts ? "Ekran dokunuşlara daha hızlı tepki verir" : "Bu cihazda desteklenmiyor",
+        root.addView(toggle(L.t("Dokunma optimizasyonu"), ts ? L.t("Ekran dokunuşlara daha hızlı tepki verir") : L.t("Bu cihazda desteklenmiyor"),
                 "touch", true, this::askAdb), mlp(8));
-        root.addView(toggle("Otomatik parlaklığı kapat", "Oyunda parlaklık zıplamaz", "autobright", true, this::askSystem), mlp(8));
+        root.addView(toggle(L.t("Otomatik parlaklığı kapat"), L.t("Oyunda parlaklık zıplamaz"), "autobright", true, this::askSystem), mlp(8));
 
-        root.addView(section("OYUN SIRASINDA"));
-        root.addView(choice("Rahatsız etme", "dnd_mode", "priority",
-                new String[]{"Kapalı", "Öncelikli", "Sadece alarmlar", "Tam sessiz"},
+        root.addView(section(L.t("OYUN SIRASINDA")));
+        root.addView(choice(L.t("Rahatsız etme"), "dnd_mode", "priority",
+                new String[]{L.t("Kapalı"), L.t("Öncelikli"), L.t("Sadece alarmlar"), L.t("Tam sessiz")},
                 new String[]{"off", "priority", "alarms", "none"}, this::askDnd));
-        root.addView(navCard("Oyun üstü panel", null, v -> chooseOverlayMode()), mlp(8));
-        root.addView(choice("Panel boyutu", "ov_size", "normal",
-                new String[]{"Küçük", "Normal", "Büyük"}, new String[]{"small", "normal", "large"}, null), mlp(8));
-        root.addView(choice("Panel saydamlığı", "ov_alpha", "70",
+        root.addView(navCard(L.t("Oyun üstü panel"), null, v -> chooseOverlayMode()), mlp(8));
+        root.addView(choice(L.t("Panel boyutu"), "ov_size", "normal",
+                new String[]{L.t("Küçük"), L.t("Normal"), L.t("Büyük")}, new String[]{"small", "normal", "large"}, null), mlp(8));
+        root.addView(choice(L.t("Panel saydamlığı"), "ov_alpha", "70",
                 new String[]{"%30", "%50", "%70", "%90"}, new String[]{"30", "50", "70", "90"}, null), mlp(8));
-        root.addView(choice("Oyundan çıkınca kapat", "autostop", "30",
-                new String[]{"Kapalı (elle kapat)", "15 sn sonra", "30 sn sonra", "60 sn sonra"}, new String[]{"0", "15", "30", "60"}, this::askUsage), mlp(8));
+        root.addView(choice(L.t("Oyundan çıkınca kapat"), "autostop", "30",
+                new String[]{L.t("Kapalı (elle kapat)"), L.t("15 sn sonra"), L.t("30 sn sonra"), L.t("60 sn sonra")}, new String[]{"0", "15", "30", "60"}, this::askUsage), mlp(8));
 
-        root.addView(section("UYGULAMA"));
-        root.addView(navCard("İzinler", "Hangi izin ne için kullanılır", v -> openPermissions()));
-        root.addView(navCard("Gizlilik", "Sunucu geçmişi, konum sorgusu, veri silme", v -> openPrivacy()), mlp(8));
-        root.addView(navCard("Tanılama", "Sistem durumu ve kopyalanabilir rapor", v -> openDiagnostics()), mlp(8));
-        LinearLayout sc = navCard("Ana ekrana \"Boost & Oyna\"", "Tek dokunuşla boost edip oyunu açar", v -> addShortcut());
+        root.addView(section(L.t("UYGULAMA")));
+        root.addView(navCard(L.t("Dil"), L.name(prefs.getString("lang", "")), v -> chooseLanguage()));
+        root.addView(navCard(L.t("İzinler"), L.t("Hangi izin ne için kullanılır"), v -> openPermissions()), mlp(8));
+        root.addView(navCard(L.t("Gizlilik"), L.t("Sunucu geçmişi, konum sorgusu, veri silme"), v -> openPrivacy()), mlp(8));
+        root.addView(navCard(L.t("Tanılama"), L.t("Sistem durumu ve kopyalanabilir rapor"), v -> openDiagnostics()), mlp(8));
+        LinearLayout sc = navCard(L.t("Ana ekrana \"Boost & Oyna\""), L.t("Tek dokunuşla boost edip oyunu açar"), v -> addShortcut());
         root.addView(sc, mlp(8));
 
-        TextView adv = text(showAdvanced ? "GELİŞMİŞ  ▾" : "GELİŞMİŞ  ▸", 12, TX3, true);
+        TextView adv = text(showAdvanced ? L.t("GELİŞMİŞ  ▾") : L.t("GELİŞMİŞ  ▸"), 12, TX3, true);
         adv.setLetterSpacing(0.08f);
         adv.setPadding(dp(4), dp(22), dp(4), dp(8));
         adv.setOnClickListener(v -> {
@@ -598,28 +615,28 @@ public class MainActivity extends Activity {
         });
         root.addView(adv);
         if (showAdvanced) {
-            TextView an = text("Shizuku gerektiren sistem seviyesi ayarlar. Normal kullanım için gerekmez.", 11, TX3, false);
+            TextView an = text(L.t("Shizuku gerektiren sistem seviyesi ayarlar. Normal kullanım için gerekmez."), 11, TX3, false);
             an.setPadding(dp(4), 0, dp(4), dp(8));
             root.addView(an);
-            root.addView(choice("Android oyun modu", "gm_mode", "off",
-                    new String[]{"Kapalı", "Standart", "Performans", "Pil tasarrufu"},
+            root.addView(choice(L.t("Android oyun modu"), "gm_mode", "off",
+                    new String[]{L.t("Kapalı"), L.t("Standart"), L.t("Performans"), L.t("Pil tasarrufu")},
                     new String[]{"off", "standard", "performance", "battery"}, this::askShizuku));
-            root.addView(choice("Render çözünürlüğü", "gm_scale", "off",
-                    new String[]{"Değiştirme", "%90", "%80", "%70", "%50"},
+            root.addView(choice(L.t("Render çözünürlüğü"), "gm_scale", "off",
+                    new String[]{L.t("Değiştirme"), "%90", "%80", "%70", "%50"},
                     new String[]{"off", "0.9", "0.8", "0.7", "0.5"}, this::askShizuku), mlp(8));
             int maxHz = Math.round(Tweaks.maxRefresh(this));
             java.util.List<String> fl = new java.util.ArrayList<>(), fv = new java.util.ArrayList<>();
-            fl.add("Kapalı"); fv.add("off");
+            fl.add(L.t("Kapalı")); fv.add("off");
             int[] opts = maxHz >= 120 ? new int[]{120, 60, 40, 30} : maxHz >= 90 ? new int[]{90, 45, 30} : new int[]{60, 30};
-            for (int o : opts) { fl.add(o + " FPS'e sabitle"); fv.add(String.valueOf(o)); }
-            root.addView(choice("FPS sabitleme", "gm_fps", "off", fl.toArray(new String[0]), fv.toArray(new String[0]), this::askShizuku), mlp(8));
-            root.addView(choice("Animasyon hızı", "anim_mode", "0.5",
-                    new String[]{"Değiştirme", "Hızlı (0.5x)", "Kapalı (0x)"}, new String[]{"off", "0.5", "0"}, this::askAdb), mlp(8));
-            root.addView(toggle("FPS ölçümü", "SurfaceFlinger üzerinden · Shizuku", "fps", true, this::askShizuku), mlp(8));
+            for (int o : opts) { fl.add(o + L.t(" FPS'e sabitle")); fv.add(String.valueOf(o)); }
+            root.addView(choice(L.t("FPS sabitleme"), "gm_fps", "off", fl.toArray(new String[0]), fv.toArray(new String[0]), this::askShizuku), mlp(8));
+            root.addView(choice(L.t("Animasyon hızı"), "anim_mode", "0.5",
+                    new String[]{L.t("Değiştirme"), L.t("Hızlı (0.5x)"), L.t("Kapalı (0x)")}, new String[]{"off", "0.5", "0"}, this::askAdb), mlp(8));
+            root.addView(toggle(L.t("FPS ölçümü"), L.t("SurfaceFlinger üzerinden · Shizuku"), "fps", true, this::askShizuku), mlp(8));
             permBox = new LinearLayout(this); // eski izin listesi tanılamaya taşındı
         } else permBox = new LinearLayout(this);
 
-        TextView note = text("Remna Boost oyun dosyalarına dokunmaz. FPS'i sihirli şekilde artırmaz; ölçer, kesintileri engeller, ısınmayı yönetir ve değiştirdiği her ayarı oyun bitince geri yükler.", 11, TX3, false);
+        TextView note = text(L.t("Remna Boost oyun dosyalarına dokunmaz. FPS'i sihirli şekilde artırmaz; ölçer, kesintileri engeller, ısınmayı yönetir ve değiştirdiği her ayarı oyun bitince geri yükler."), 11, TX3, false);
         note.setPadding(dp(4), dp(18), dp(4), 0);
         root.addView(note);
     }
@@ -651,12 +668,12 @@ public class MainActivity extends Activity {
         setContentView(build());
         refresh();
         scrolls[0].post(() -> scrolls[0].scrollTo(0, y));
-        toast(nameOf(id) + " profili uygulandı" + (Sh.granted() ? "" : " (Android oyun modu için Shizuku gerekli)"));
+        toast(nameOf(id) + L.t(" profili uygulandı") + (Sh.granted() ? "" : L.t(" (Android oyun modu için Shizuku gerekli)")));
     }
 
     String nameOf(String id) {
-        for (int i = 0; i < PROFILE_IDS.length; i++) if (PROFILE_IDS[i].equals(id)) return PROFILE_NAMES[i];
-        return "Özel";
+        for (int i = 0; i < PROFILE_IDS.length; i++) if (PROFILE_IDS[i].equals(id)) return L.t(PROFILE_NAMES[i]);
+        return L.t("Özel");
     }
 
     void renderProfiles() {
@@ -671,8 +688,8 @@ public class MainActivity extends Activity {
             GradientDrawable g = round(on ? 0x26F97316 : CARD, 16);
             g.setStroke(dp(1), on ? OR : 0x0FFFFFFF);
             c.setBackground(g);
-            c.addView(text(PROFILE_NAMES[i], 14, on ? Color.WHITE : TX, true));
-            c.addView(text(PROFILE_SUB[i], 11, on ? OR : TX3, false));
+            c.addView(text(L.t(PROFILE_NAMES[i]), 14, on ? Color.WHITE : TX, true));
+            c.addView(text(L.t(PROFILE_SUB[i]), 11, on ? OR : TX3, false));
             final String id = PROFILE_IDS[i];
             c.setOnClickListener(v -> applyProfile(id));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
@@ -680,7 +697,7 @@ public class MainActivity extends Activity {
             profileRow.addView(c, lp);
         }
         if ("custom".equals(cur)) {
-            TextView t = text("Özel ayarlar kullanılıyor · Ayarlar sekmesinden düzenlendi", 11, TX3, false);
+            TextView t = text(L.t("Özel ayarlar kullanılıyor · Ayarlar sekmesinden düzenlendi"), 11, TX3, false);
             t.setPadding(dp(4), dp(6), 0, 0);
             ((LinearLayout) profileRow.getParent()).addView(t, ((LinearLayout) profileRow.getParent()).indexOfChild(profileRow) + 1);
         }
@@ -690,11 +707,11 @@ public class MainActivity extends Activity {
     void renderSetup() {
         setupBox.removeAllViews();
         java.util.List<String> miss = new java.util.ArrayList<>();
-        if (!Settings.canDrawOverlays(this)) miss.add("Oyun üstü panel izni");
-        if (!Boost.usageAllowed(this)) miss.add("Kullanım erişimi (otomatik kapanma, rapor)");
-        if (!Boost.dndAllowed(this) && !"off".equals(prefs.getString("dnd_mode", "priority"))) miss.add("Rahatsız etme erişimi");
+        if (!Settings.canDrawOverlays(this)) miss.add(L.t("Oyun üstü panel izni"));
+        if (!Boost.usageAllowed(this)) miss.add(L.t("Kullanım erişimi (otomatik kapanma, rapor)"));
+        if (!Boost.dndAllowed(this) && !"off".equals(prefs.getString("dnd_mode", "priority"))) miss.add(L.t("Rahatsız etme erişimi"));
         boolean ok = miss.isEmpty();
-        statusPill.setText(ok ? "● HAZIR" : "● KURULUM " + miss.size());
+        statusPill.setText(ok ? L.t("● HAZIR") : L.t("● KURULUM ") + miss.size());
         statusPill.setTextColor(ok ? GREEN : OR);
         statusPill.setBackground(round(ok ? 0x1A35E6A1 : 0x1AFF6B35, 14));
         if (ok) {
@@ -702,10 +719,10 @@ public class MainActivity extends Activity {
                 LinearLayout p = card();
                 LinearLayout pt = new LinearLayout(this);
                 pt.setOrientation(LinearLayout.VERTICAL);
-                pt.addView(text("Pro özellikler (isteğe bağlı)", 14, TX, true));
-                pt.addView(text("FPS göstergesi · sunucu kaydı · Android oyun modu · Shizuku ile", 11, TX3, false));
+                pt.addView(text(L.t("Pro özellikler (isteğe bağlı)"), 14, TX, true));
+                pt.addView(text(L.t("FPS göstergesi · sunucu kaydı · Android oyun modu · Shizuku ile"), 11, TX3, false));
                 p.addView(pt, new LinearLayout.LayoutParams(0, -2, 1));
-                p.addView(text("Nasıl? ›", 13, OR, true));
+                p.addView(text(L.t("Nasıl? ›"), 13, OR, true));
                 p.setOnClickListener(v -> askShizuku());
                 setupBox.addView(p, mlp(12));
             }
@@ -716,13 +733,13 @@ public class MainActivity extends Activity {
         GradientDrawable g = round(0x14F97316, 20);
         g.setStroke(dp(1), 0x66F97316);
         c.setBackground(g);
-        c.addView(text("Kurulumu tamamla", 15, TX, true));
+        c.addView(text(L.t("Kurulumu tamamla"), 15, TX, true));
         for (String m : miss) {
             TextView t = text("•  " + m, 12, TX2, false);
             t.setPadding(0, dp(4), 0, 0);
             c.addView(t);
         }
-        TextView go = text("İzinlere git ›", 13, OR, true);
+        TextView go = text(L.t("İzinlere git ›"), 13, OR, true);
         go.setPadding(0, dp(8), 0, 0);
         c.addView(go);
         c.setOnClickListener(v -> openPermissions());
@@ -806,7 +823,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Shizuku")
                 .setMessage("FPS göstergesi ve otomatik ADB izni için Shizuku uygulaması gerekir.\n\n1) Shizuku'yu kur (Play Store / GitHub)\n2) Shizuku'yu aç → 'Kablosuz hata ayıklama ile başlat'\n3) Remna Boost'a dönüp izin ver\n\nTelefon yeniden başlarsa Shizuku'yu tekrar başlatman gerekir.")
                 .setPositiveButton("Shizuku'yu indir", (d, w) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest"))))
-                .setNegativeButton("Kapat", null).show();
+                .setNegativeButton(L.t("Kapat"), null).show();
     }
 
     void markCustom() {
@@ -822,14 +839,14 @@ public class MainActivity extends Activity {
         LinearLayout l = card();
         LinearLayout t = new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
-        t.addView(text("Ping bölgesi", 15, TX, true));
+        t.addView(text(L.t("Ping bölgesi"), 15, TX, true));
         TextView sub = text(regionName(), 12, TX2, false);
         t.addView(sub);
         l.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
         l.setOnClickListener(v -> {
             String[] names = new String[REGIONS.length];
             for (int i = 0; i < names.length; i++) names[i] = REGIONS[i][0];
-            new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Ping bölgesi")
+            new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(L.t("Ping bölgesi"))
                     .setItems(names, (d, w) -> { prefs.edit().putString("ping_host", REGIONS[w][1]).apply(); sub.setText(regionName()); })
                     .show();
         });
@@ -849,10 +866,10 @@ public class MainActivity extends Activity {
                 .setTitle("PUBG sunucu analizi").setView(sv)
                 .setPositiveButton("Kopyala", (d, w) -> {
                     ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("srv", body.getText()));
-                    toast("Kopyalandı");
+                    toast(L.t("Kopyalandı"));
                 })
                 .setNeutralButton("Temizle", (d, w) -> { ServerLog.clear(this); histSub.setText("Kayıtlar silindi"); })
-                .setNegativeButton("Kapat", null).show();
+                .setNegativeButton(L.t("Kapat"), null).show();
         new Thread(() -> {
             ServerLog.vpnMode = Boost.vpnActive(this);
             ServerLog.enrich(this);
@@ -950,8 +967,8 @@ public class MainActivity extends Activity {
                 .setTitle("PUBG oyun sunucusu").setView(sv)
                 .setPositiveButton("Kopyala", (d, w) -> {
                     ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("srv", body.getText()));
-                    toast("Kopyalandı");
-                }).setNegativeButton("Kapat", null).show();
+                    toast(L.t("Kopyalandı"));
+                }).setNegativeButton(L.t("Kapat"), null).show();
         StringBuilder sb = new StringBuilder("Sunucu: " + ip + "\n");
         new Thread(() -> {
             // konum: önce yerel tablo; çevrimiçi sorgu yalnız kullanıcı izin verdiyse (Gizlilik)
@@ -1123,7 +1140,7 @@ public class MainActivity extends Activity {
         ScrollView sv = new ScrollView(this);
         sv.addView(box);
         AlertDialog dlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("PUBG bölge ping testi").setView(sv).setNegativeButton("Kapat", null).show();
+                .setTitle("PUBG bölge ping testi").setView(sv).setNegativeButton(L.t("Kapat"), null).show();
 
         int[] best = new int[n];
         int[] done = {0};
@@ -1192,8 +1209,8 @@ public class MainActivity extends Activity {
         for (String[] g : games) if (g[0].equals(saved)) game = g[0];
         if (game == null && !games.isEmpty()) game = games.get(0)[0];
         if (game == null) {
-            gameName.setText("PUBG bulunamadı");
-            gameSub.setText("PUBG Mobile yüklü değil");
+            gameName.setText(L.t("PUBG bulunamadı"));
+            gameSub.setText(L.t("PUBG Mobile yüklü değil"));
             gameIcon.setImageDrawable(null);
             return;
         }
@@ -1204,7 +1221,7 @@ public class MainActivity extends Activity {
             String label = game;
             for (String[] g : Boost.PUBG) if (g[0].equals(game)) label = g[1];
             gameName.setText(label);
-            gameSub.setText("v" + pm.getPackageInfo(game, 0).versionName + (games.size() > 1 ? "  •  değiştirmek için dokun" : ""));
+            gameSub.setText("v" + pm.getPackageInfo(game, 0).versionName + (games.size() > 1 ? L.t("  •  değiştirmek için dokun") : ""));
         } catch (Exception ignored) {}
     }
 
@@ -1213,62 +1230,62 @@ public class MainActivity extends Activity {
         if (games.size() < 2) return;
         String[] names = new String[games.size()];
         for (int i = 0; i < names.length; i++) names[i] = games.get(i)[1];
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Oyun seç")
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(L.t("Oyun seç"))
                 .setItems(names, (d, w) -> {
                     boolean had = GameProfiles.switchTo(this, game, games.get(w)[0]);
-                    toast(had ? names[w] + " profili yüklendi" : names[w] + " için yeni profil (mevcut ayarlar kopyalandı)");
+                    toast(had ? names[w] + L.t(" profili yüklendi") : names[w] + L.t(" için yeni profil (mevcut ayarlar kopyalandı)"));
                     setContentView(build());
                     refresh();
                 }).show();
     }
 
     void boost() {
-        if (game == null) { toast("PUBG Mobile yüklü değil"); return; }
+        if (game == null) { toast(L.t("PUBG Mobile yüklü değil")); return; }
         if (!Sh.granted() && prefs.getBoolean("fps", true) && !prefs.getBoolean("pro_hint", false)) {
             prefs.edit().putBoolean("pro_hint", true).apply();
-            toast("Ping ve diğer özellikler çalışıyor. FPS göstergesi için isteğe bağlı Shizuku gerekir.");
+            toast(L.t("Ping ve diğer özellikler çalışıyor. FPS göstergesi için isteğe bağlı Shizuku gerekir."));
         }
         big.setBusy(true);
         new Thread(() -> {
             java.util.List<String> done = new java.util.ArrayList<>(), skipped = new java.util.ArrayList<>();
-            step("CİHAZ ANALİZİ");
+            step(L.t("CİHAZ ANALİZİ"));
             long total = Boost.totalRam(this), before = Boost.availRam(this);
             float temp = Boost.batteryTemp(this);
-            step("RAM KONTROLÜ");
+            step(L.t("RAM KONTROLÜ"));
             String mode = prefs.getString("cleanup", "smart");
             int killed = Boost.cleanup(this, game, mode);
             sleep(700);
             long freed = Math.max(0, Boost.availRam(this) - before);
-            if (killed >= 0) done.add(String.format(java.util.Locale.US, "Arka plan temizliği · %d uygulama · +%d MB", killed, freed / 1048576));
-            else skipped.add("off".equals(mode) ? "Temizlik kapalı" : "Temizlik gerekmedi · RAM yeterli (%" + (before * 100 / Math.max(1, total)) + " boş)");
-            step("AĞ KONTROLÜ");
+            if (killed >= 0) done.add(String.format(java.util.Locale.US, L.t("Arka plan temizliği · %d uygulama · +%d MB"), killed, freed / 1048576));
+            else skipped.add("off".equals(mode) ? L.t("Temizlik kapalı") : L.t("Temizlik gerekmedi · RAM yeterli (%") + (before * 100 / Math.max(1, total)) + L.t(" boş)"));
+            step(L.t("AĞ KONTROLÜ"));
             int ping = -1;
             String reg = regionOfHost(prefs.getString("ping_host", ""));
             for (String ip : Boost.dcFor(this, reg == null ? "Avrupa" : reg)) { ping = Boost.icmp(ip); if (ping > 0) break; }
-            step("SICAKLIK KONTROLÜ");
+            step(L.t("SICAKLIK KONTROLÜ"));
             float[] th = Thermal.thresholds(this);
             Thermal.State ts = th == null ? Thermal.State.NORMAL : Thermal.classify(temp, th);
-            if (th != null) done.add("Termal koruma · şu an " + Thermal.label(ts) + String.format(java.util.Locale.US, " (%.0f°C)", temp));
-            step("OPTİMİZASYON");
+            if (th != null) done.add(L.t("Termal koruma · şu an ") + Thermal.label(ts) + String.format(java.util.Locale.US, " (%.0f°C)", temp));
+            step(L.t("OPTİMİZASYON"));
             String gm = Sh.granted() ? Perf.applyGameMode(this, game) : null;
             if (gm != null && !gm.equals("kapalı") && !gm.toLowerCase().contains("error") && !gm.toLowerCase().contains("exception"))
-                done.add("Android oyun modu · " + prefs.getString("gm_mode", "performance"));
-            else if (!Sh.granted() && !"off".equals(prefs.getString("gm_mode", "off"))) skipped.add("Android oyun modu · Shizuku gerekli");
+                done.add(L.t("Android oyun modu · ") + prefs.getString("gm_mode", "performance"));
+            else if (!Sh.granted() && !"off".equals(prefs.getString("gm_mode", "off"))) skipped.add(L.t("Android oyun modu · Shizuku gerekli"));
             boolean secure = Tweaks.secureAllowed(this);
             String hz = prefs.getString("hz_mode", "max");
             if (!"off".equals(hz)) {
-                if (secure) done.add("Yenileme hızı · " + ("max".equals(hz) ? Math.round(Tweaks.maxRefresh(this)) : hz) + " Hz");
-                else skipped.add("Sabit yenileme hızı · ADB izni gerekli");
+                if (secure) done.add(L.t("Yenileme hızı · ") + ("max".equals(hz) ? Math.round(Tweaks.maxRefresh(this)) : hz) + " Hz");
+                else skipped.add(L.t("Sabit yenileme hızı · ADB izni gerekli"));
             }
             if (!"off".equals(prefs.getString("dnd_mode", "priority"))) {
-                if (Boost.dndAllowed(this)) done.add("Rahatsız etme");
-                else skipped.add("Rahatsız etme · izin gerekli");
+                if (Boost.dndAllowed(this)) done.add(L.t("Rahatsız etme"));
+                else skipped.add(L.t("Rahatsız etme · izin gerekli"));
             }
             if (prefs.getBoolean("touch", true) && Tweaks.touchSupported(this)) {
-                if (secure || Sh.granted()) done.add("Dokunma hassasiyeti");
-                else skipped.add("Dokunma hassasiyeti · ADB izni gerekli");
+                if (secure || Sh.granted()) done.add(L.t("Dokunma hassasiyeti"));
+                else skipped.add(L.t("Dokunma hassasiyeti · ADB izni gerekli"));
             }
-            if (!"off".equals(prefs.getString("ov_mode", "full")) && Settings.canDrawOverlays(this)) done.add("Oyun üstü panel");
+            if (!"off".equals(prefs.getString("ov_mode", "full")) && Settings.canDrawOverlays(this)) done.add(L.t("Oyun üstü panel"));
             final int fPing = ping;
             h.post(() -> {
                 big.setBusy(false);
@@ -1290,22 +1307,22 @@ public class MainActivity extends Activity {
         btnLabel.setTextSize(26);
         StringBuilder sb = new StringBuilder();
         sb.append(gameName.getText()).append("\n\n");
-        sb.append(String.format(java.util.Locale.US, "RAM  %s boş   ·   PING  %s   ·   SICAKLIK  %.0f°C%n%n",
+        sb.append(String.format(java.util.Locale.US, L.t("RAM  %s boş   ·   PING  %s   ·   SICAKLIK  %.0f°C%n%n"),
                 Boost.fmtGb(Boost.availRam(this)), ping > 0 ? ping + " ms" : "—", temp));
-        sb.append("Uygulananlar:\n");
+        sb.append(L.t("Uygulananlar:\n"));
         for (String d : done) sb.append("✓ ").append(d).append('\n');
         if (!skipped.isEmpty()) {
-            sb.append("\nUygulanmayanlar:\n");
+            sb.append(L.t("\nUygulanmayanlar:\n"));
             for (String k : skipped) sb.append("–  ").append(k).append('\n');
         }
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("✓ BOOST TAMAMLANDI")
+                .setTitle(L.t("✓ BOOST TAMAMLANDI"))
                 .setMessage(sb.toString())
-                .setPositiveButton("OYUNU BAŞLAT", (d, w) -> {
+                .setPositiveButton(L.t("OYUNU BAŞLAT"), (d, w) -> {
                     Intent launch = getPackageManager().getLaunchIntentForPackage(game);
                     if (launch != null) startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 })
-                .setNegativeButton("Kapat", null)
+                .setNegativeButton(L.t("Kapat"), null)
                 .show();
     }
 
@@ -1319,7 +1336,7 @@ public class MainActivity extends Activity {
                 final int fp = BoostService.running ? Integer.MIN_VALUE : p;
                 h.post(() -> { if (fpsBig != null) renderHome(fp); if (tab == 2) renderPerf(); });
             }).start();
-            if (!big.busy) { btnLabel.setTextSize(26); btnLabel.setText(BoostService.running ? "OYUNDA" : "BOOST"); }
+            if (!big.busy) { btnLabel.setTextSize(26); btnLabel.setText(BoostService.running ? L.t("OYUNDA") : "BOOST"); }
             h.postDelayed(this, 3000);
         }
     };
@@ -1355,8 +1372,8 @@ public class MainActivity extends Activity {
             btn[start].performClick();
             LinearLayout clr = navCard("Ağ geçmişini temizle", NetHistory.count(this) + " ölçüm kayıtlı", v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                     .setTitle("Ağ geçmişi silinsin mi?")
-                    .setPositiveButton("Sil", (dd, w) -> { NetHistory.clear(this); fillNetHistory(list, 30); toast("Ağ geçmişi silindi"); })
-                    .setNegativeButton("Vazgeç", null).show());
+                    .setPositiveButton(L.t("Sil"), (dd, w) -> { NetHistory.clear(this); fillNetHistory(list, 30); toast("Ağ geçmişi silindi"); })
+                    .setNegativeButton(L.t("Vazgeç"), null).show());
             b.addView(clr, mlp(16));
             TextView n = text("Kaynak: bölge testleri ve oyun oturumları (VPN kapalıyken). Yalnız bölge özetleri tutulur, IP adresi tutulmaz.", 11, TX3, false);
             n.setPadding(dp(4), dp(10), dp(4), 0);
@@ -1439,18 +1456,18 @@ public class MainActivity extends Activity {
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER_VERTICAL);
         r.addView(text(name, 15, TX, true), new LinearLayout.LayoutParams(0, -2, 1));
-        TextView st = text(ok ? "✓ AÇIK" : required ? "✕ KAPALI" : "○ İSTEĞE BAĞLI", 11, ok ? GREEN : required ? RED : TX2, true);
+        TextView st = text(ok ? L.t("✓ AÇIK") : required ? L.t("✕ KAPALI") : L.t("○ İSTEĞE BAĞLI"), 11, ok ? GREEN : required ? RED : TX2, true);
         r.addView(st);
         c.addView(r);
         TextView w = text(why, 12, TX2, false);
         w.setPadding(0, dp(4), 0, 0);
         c.addView(w);
-        TextView tag = text(required ? "GEREKLİ" : "İSTEĞE BAĞLI", 10, TX3, true);
+        TextView tag = text(required ? L.t("GEREKLİ") : L.t("İSTEĞE BAĞLI"), 10, TX3, true);
         tag.setLetterSpacing(0.08f);
         tag.setPadding(0, dp(6), 0, 0);
         c.addView(tag);
         if (!ok && enable != null) {
-            TextView b = text("ETKİNLEŞTİR", 12, Color.WHITE, true);
+            TextView b = text(L.t("ETKİNLEŞTİR"), 12, Color.WHITE, true);
             b.setGravity(Gravity.CENTER);
             b.setPadding(dp(14), dp(10), dp(14), dp(10));
             b.setBackground(round(OR, 12));
@@ -1463,45 +1480,45 @@ public class MainActivity extends Activity {
     }
 
     void openPermissions() {
-        sheet("İZİNLER", b -> {
-            b.addView(permCard("Oyun üstü panel", Settings.canDrawOverlays(this), true,
-                    "Oyun sırasında FPS, ping ve sıcaklık panelini göstermek için.", this::askOverlay));
-            b.addView(permCard("Kullanım erişimi", Boost.usageAllowed(this), true,
-                    "Oyunun kapandığını algılayıp ayarları geri yüklemek için.", this::askUsage), mlp(10));
-            b.addView(permCard("Rahatsız etme", Boost.dndAllowed(this), false,
-                    "Oyun sırasında bildirim ve aramaları susturmak için.", this::askDnd), mlp(10));
-            b.addView(permCard("Sistem ayarları", Tweaks.systemAllowed(this), false,
-                    "Otomatik parlaklığı oyun boyunca kapatmak için.", this::askSystem), mlp(10));
+        sheet(L.t("İZİNLER"), b -> {
+            b.addView(permCard(L.t("Oyun üstü panel"), Settings.canDrawOverlays(this), true,
+                    L.t("Oyun sırasında FPS, ping ve sıcaklık panelini göstermek için."), this::askOverlay));
+            b.addView(permCard(L.t("Kullanım erişimi"), Boost.usageAllowed(this), true,
+                    L.t("Oyunun kapandığını algılayıp ayarları geri yüklemek için."), this::askUsage), mlp(10));
+            b.addView(permCard(L.t("Rahatsız etme"), Boost.dndAllowed(this), false,
+                    L.t("Oyun sırasında bildirim ve aramaları susturmak için."), this::askDnd), mlp(10));
+            b.addView(permCard(L.t("Sistem ayarları"), Tweaks.systemAllowed(this), false,
+                    L.t("Otomatik parlaklığı oyun boyunca kapatmak için."), this::askSystem), mlp(10));
             b.addView(permCard("Shizuku", Sh.granted(), false,
-                    (Sh.running() ? "Bağlı değil. " : "Kurulu değil ya da çalışmıyor. ")
-                            + "FPS ölçümü, Android oyun modu ve sunucu tespiti gibi gelişmiş özellikler için.", this::askShizuku), mlp(10));
-            b.addView(permCard("Güvenli ayarlar (ADB)", Tweaks.secureAllowed(this), false,
-                    "Sabit yenileme hızı, animasyon ve dokunma optimizasyonu için. Shizuku bağlıysa otomatik verilir.", this::showAdbHelp), mlp(10));
+                    (Sh.running() ? L.t("Bağlı değil. ") : L.t("Kurulu değil ya da çalışmıyor. "))
+                            + L.t("FPS ölçümü, Android oyun modu ve sunucu tespiti gibi gelişmiş özellikler için."), this::askShizuku), mlp(10));
+            b.addView(permCard(L.t("Güvenli ayarlar (ADB)"), Tweaks.secureAllowed(this), false,
+                    L.t("Sabit yenileme hızı, animasyon ve dokunma optimizasyonu için. Shizuku bağlıysa otomatik verilir."), this::showAdbHelp), mlp(10));
         });
     }
 
     void openPrivacy() {
-        sheet("GİZLİLİK", b -> {
-            b.addView(toggle("Sunucu geçmişi kaydı", "PUBG'nin bağlandığı sunucu IP'leri yalnız bu cihazda saklanır", "srv_record", true, null));
-            b.addView(toggle("Ağ geçmişi", "Bölge bazında ping özetleri (IP yok) · bu cihazda", "net_hist_on", true, null), mlp(8));
-            b.addView(toggle("Çevrimiçi konum sorgusu", "Bilinmeyen IP'ler ipwho.is'e (HTTPS) gönderilir", "geo_online", false, null), mlp(8));
-            b.addView(toggle("Hata raporları", "Kapalı · hiçbir veri gönderilmez", "crash_reports", false, null), mlp(8));
-            b.addView(toggle("Analitik", "Kapalı · uygulamada analitik yok", "analytics", false, null), mlp(8));
-            LinearLayout clr = navCard("Sunucu geçmişini temizle", "Kayıtlı IP'ler, konumlar ve ölçümler", v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                    .setTitle("Sunucu geçmişi silinsin mi?")
-                    .setPositiveButton("Sil", (d, w) -> { ServerLog.clear(this); toast("Sunucu geçmişi silindi"); })
-                    .setNegativeButton("Vazgeç", null).show());
+        sheet(L.t("GİZLİLİK"), b -> {
+            b.addView(toggle(L.t("Sunucu geçmişi kaydı"), L.t("PUBG'nin bağlandığı sunucu IP'leri yalnız bu cihazda saklanır"), "srv_record", true, null));
+            b.addView(toggle(L.t("Ağ geçmişi"), L.t("Bölge bazında ping özetleri (IP yok) · bu cihazda"), "net_hist_on", true, null), mlp(8));
+            b.addView(toggle(L.t("Çevrimiçi konum sorgusu"), L.t("Bilinmeyen IP'ler ipwho.is'e (HTTPS) gönderilir"), "geo_online", false, null), mlp(8));
+            b.addView(toggle(L.t("Hata raporları"), L.t("Kapalı · hiçbir veri gönderilmez"), "crash_reports", false, null), mlp(8));
+            b.addView(toggle(L.t("Analitik"), L.t("Kapalı · uygulamada analitik yok"), "analytics", false, null), mlp(8));
+            LinearLayout clr = navCard(L.t("Sunucu geçmişini temizle"), L.t("Kayıtlı IP'ler, konumlar ve ölçümler"), v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle(L.t("Sunucu geçmişi silinsin mi?"))
+                    .setPositiveButton(L.t("Sil"), (d, w) -> { ServerLog.clear(this); toast(L.t("Sunucu geçmişi silindi")); })
+                    .setNegativeButton(L.t("Vazgeç"), null).show());
             b.addView(clr, mlp(16));
-            LinearLayout all = navCard("Tüm uygulama verilerini sil", "Ayarlar, profiller, raporlar ve geçmiş", v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                    .setTitle("Tüm veriler silinsin mi?").setMessage("Önce değiştirilmiş sistem ayarları geri yüklenir.")
-                    .setPositiveButton("Sil", (d, w) -> {
+            LinearLayout all = navCard(L.t("Tüm uygulama verilerini sil"), L.t("Ayarlar, profiller, raporlar ve geçmiş"), v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle(L.t("Tüm veriler silinsin mi?")).setMessage(L.t("Önce değiştirilmiş sistem ayarları geri yüklenir."))
+                    .setPositiveButton(L.t("Sil"), (d, w) -> {
                         if (BoostService.running) stopService(new Intent(this, BoostService.class));
                         Tweaks.restore(this);
                         Boost.dndOff(this);
                         prefs.edit().clear().apply();
-                        toast("Tüm veriler silindi");
+                        toast(L.t("Tüm veriler silindi"));
                         recreate();
-                    }).setNegativeButton("Vazgeç", null).show());
+                    }).setNegativeButton(L.t("Vazgeç"), null).show());
             b.addView(all, mlp(8));
             TextView n = text("Konumlar önce uygulamanın içindeki tablodan bulunur. Dışarıya veri yalnız \"Çevrimiçi konum sorgusu\" açıksa ve yalnız sunucu IP'si olarak gönderilir.", 11, TX3, false);
             n.setPadding(dp(4), dp(14), dp(4), 0);
@@ -1518,9 +1535,9 @@ public class MainActivity extends Activity {
         r.append("UYGULAMA  Remna Boost ").append(ver).append('\n');
         r.append("OYUN  ").append(game == null ? "bulunamadı" : gameName.getText()).append('\n');
         r.append("SHIZUKU  ").append(Sh.granted() ? "BAĞLI" : Sh.running() ? "İZİN YOK" : "KULLANILAMIYOR").append('\n');
-        r.append("PANEL  ").append(Settings.canDrawOverlays(this) ? "Açık" : "Kapalı").append('\n');
-        r.append("KULLANIM ERİŞİMİ  ").append(Boost.usageAllowed(this) ? "Açık" : "Kapalı").append('\n');
-        r.append("GÜVENLİ AYARLAR  ").append(Tweaks.secureAllowed(this) ? "Açık" : "Kapalı").append('\n');
+        r.append("PANEL  ").append(Settings.canDrawOverlays(this) ? "Açık" : L.t("Kapalı")).append('\n');
+        r.append("KULLANIM ERİŞİMİ  ").append(Boost.usageAllowed(this) ? "Açık" : L.t("Kapalı")).append('\n');
+        r.append("GÜVENLİ AYARLAR  ").append(Tweaks.secureAllowed(this) ? "Açık" : L.t("Kapalı")).append('\n');
         r.append("FPS ÖLÇÜMÜ  ").append(!Sh.granted() ? "Kullanılamıyor (Shizuku yok)" : Live.fpsStats() != null ? "Çalışıyor" : "Henüz ölçülmedi").append('\n');
         r.append("YENİLEME HIZLARI  ").append(Tweaks.refreshRates(this)).append(" Hz\n");
         r.append(String.format(java.util.Locale.US, "TERMAL  pil %.0f°C · sensör %s%n", Boost.batteryTemp(this), Perf.cpuCache > 0 ? Perf.cpuLabel + " " + Math.round(Perf.cpuCache) + "°C" : "okunamıyor"));
@@ -1543,14 +1560,14 @@ public class MainActivity extends Activity {
             cp.setBackground(round(OR, 14));
             cp.setOnClickListener(v -> {
                 ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("diag", t.getText()));
-                toast("Kopyalandı");
+                toast(L.t("Kopyalandı"));
             });
             b.addView(cp, mlp(14));
             String fd = prefs.getString("fps_diag", null);
             if (fd != null) b.addView(navCard("FPS tanılama kaydı", "SurfaceFlinger çıktısı özeti", v ->
                     new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("FPS tanılama").setMessage(fd)
                             .setPositiveButton("Kopyala", (d, w) -> ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE))
-                                    .setPrimaryClip(ClipData.newPlainText("fps", fd))).setNegativeButton("Kapat", null).show()), mlp(10));
+                                    .setPrimaryClip(ClipData.newPlainText("fps", fd))).setNegativeButton(L.t("Kapat"), null).show()), mlp(10));
             String base = diagnosticReport();
             t.setText(base + "AĞ  test ediliyor…");
             new Thread(() -> {
@@ -1571,7 +1588,7 @@ public class MainActivity extends Activity {
         c.setGravity(Gravity.CENTER_HORIZONTAL);
         c.setBackgroundColor(BG);
         c.setPadding(dp(28), dp(60), dp(28), dp(36));
-        TextView stepTv = text(step == 0 ? "" : "ADIM " + step + " / 3", 11, TX3, true);
+        TextView stepTv = text(step == 0 ? "" : L.t("ADIM ") + step + " / 3", 11, TX3, true);
         stepTv.setLetterSpacing(0.12f);
         c.addView(stepTv);
         ImageView logo = new ImageView(this);
@@ -1581,10 +1598,10 @@ public class MainActivity extends Activity {
         c.addView(logo, llp);
         String title, body;
         switch (step) {
-            case 0: title = "REMNA BOOST'A\nHOŞ GELDİN"; body = "Oyun Performans Merkezi\n\n✓  FPS ve kare süresi izleme\n✓  Ağ ve bölge analizi\n✓  Termal koruma\n✓  Akıllı optimizasyon"; break;
-            case 1: title = "Oyununu seç"; body = installedNames(); break;
-            case 2: title = "Oyun üstü paneli aç"; body = "Oyun sırasında FPS, ping ve sıcaklığı küçük bir panelde gösterir. Paneli istediğin yere sürükleyebilirsin."; break;
-            default: title = "Gelişmiş özellikler\n(isteğe bağlı)"; body = "Shizuku ile FPS ölçümü, Android oyun modu ve sunucu tespiti açılır. Kurulum birkaç dakika sürer; şimdi atlayıp sonra Ayarlar → İzinler'den açabilirsin."; break;
+            case 0: title = L.t("REMNA BOOST'A\nHOŞ GELDİN"); body = L.t("Oyun Performans Merkezi\n\n✓  FPS ve kare süresi izleme\n✓  Ağ ve bölge analizi\n✓  Termal koruma\n✓  Akıllı optimizasyon"); break;
+            case 1: title = L.t("Oyununu seç"); body = installedNames(); break;
+            case 2: title = L.t("Oyun üstü paneli aç"); body = L.t("Oyun sırasında FPS, ping ve sıcaklığı küçük bir panelde gösterir. Paneli istediğin yere sürükleyebilirsin."); break;
+            default: title = L.t("Gelişmiş özellikler\n(isteğe bağlı)"); body = L.t("Shizuku ile FPS ölçümü, Android oyun modu ve sunucu tespiti açılır. Kurulum birkaç dakika sürer; şimdi atlayıp sonra Ayarlar → İzinler'den açabilirsin."); break;
         }
         TextView tt = text(title, 24, TX, true);
         tt.setGravity(Gravity.CENTER);
@@ -1594,13 +1611,13 @@ public class MainActivity extends Activity {
         bt.setGravity(Gravity.CENTER);
         bt.setLineSpacing(dp(4), 1f);
         c.addView(bt, new LinearLayout.LayoutParams(-1, 0, 1));
-        String primary = step == 0 ? "DEVAM" : step == 1 ? "DEVAM" : "ETKİNLEŞTİR";
+        String primary = step == 0 ? L.t("DEVAM") : step == 1 ? L.t("DEVAM") : L.t("ETKİNLEŞTİR");
         TextView pb = text(primary, 14, Color.WHITE, true);
         pb.setGravity(Gravity.CENTER);
         pb.setPadding(0, dp(16), 0, dp(16));
         pb.setBackground(round(OR, 16));
         c.addView(pb, new LinearLayout.LayoutParams(-1, -2));
-        TextView skip = text(step >= 2 ? "ATLA" : "", 13, TX2, true);
+        TextView skip = text(step >= 2 ? L.t("ATLA") : "", 13, TX2, true);
         skip.setGravity(Gravity.CENTER);
         skip.setPadding(0, dp(16), 0, 0);
         c.addView(skip, new LinearLayout.LayoutParams(-1, -2));
@@ -1622,10 +1639,10 @@ public class MainActivity extends Activity {
 
     String installedNames() {
         java.util.List<String[]> g = Boost.installedGames(this);
-        if (g.isEmpty()) return "Desteklenen bir PUBG Mobile sürümü bulunamadı. Uygulamayı yine de kullanabilir, oyunu yükledikten sonra ana ekrandan seçebilirsin.";
-        StringBuilder sb = new StringBuilder("Bulunan oyunlar:\n\n");
+        if (g.isEmpty()) return L.t("Desteklenen bir PUBG Mobile sürümü bulunamadı. Uygulamayı yine de kullanabilir, oyunu yükledikten sonra ana ekrandan seçebilirsin.");
+        StringBuilder sb = new StringBuilder(L.t("Bulunan oyunlar:\n\n"));
         for (String[] x : g) sb.append("●  ").append(x[1]).append('\n');
-        sb.append(g.size() > 1 ? "\nDevam'a basınca hangisini kullanacağını seçebilirsin." : "\nBu oyun otomatik seçildi.");
+        sb.append(g.size() > 1 ? L.t("\nDevam'a basınca hangisini kullanacağını seçebilirsin.") : L.t("\nBu oyun otomatik seçildi."));
         return sb.toString();
     }
 
@@ -1633,7 +1650,7 @@ public class MainActivity extends Activity {
         List<String[]> games = Boost.installedGames(this);
         String[] names = new String[games.size()];
         for (int i = 0; i < names.length; i++) names[i] = games.get(i)[1];
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Oyun seç").setCancelable(false)
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(L.t("Oyun seç")).setCancelable(false)
                 .setItems(names, (d, w) -> { GameProfiles.switchTo(this, game, games.get(w)[0]); pickGame(); after.run(); }).show();
     }
 
@@ -1656,8 +1673,8 @@ public class MainActivity extends Activity {
 
     void renderPerms() {
         permBox.removeAllViews();
-        perm("Oyun üstü panel", Settings.canDrawOverlays(this), this::askOverlay);
-        perm("Rahatsız etme erişimi", Boost.dndAllowed(this), this::askDnd);
+        perm(L.t("Oyun üstü panel"), Settings.canDrawOverlays(this), this::askOverlay);
+        perm(L.t("Rahatsız etme erişimi"), Boost.dndAllowed(this), this::askDnd);
         perm("Sistem ayarlarını değiştirme", Tweaks.systemAllowed(this), this::askSystem);
         perm("Kullanım erişimi (oyundan çıkınca otomatik kapanır)", Boost.usageAllowed(this), this::askUsage);
         perm("Shizuku (FPS · otomatik ADB izni)", Sh.granted(), this::askShizuku);
@@ -1670,8 +1687,8 @@ public class MainActivity extends Activity {
                     .setTitle("FPS tanılama").setMessage(diag)
                     .setPositiveButton("Kopyala", (d, w) -> {
                         ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("fps", diag));
-                        toast("Kopyalandı");
-                    }).setNegativeButton("Kapat", null).show());
+                        toast(L.t("Kopyalandı"));
+                    }).setNegativeButton(L.t("Kapat"), null).show());
             permBox.addView(l, mlp(8));
         }
         perm("ADB izni (sabit Hz · animasyon)", Tweaks.secureAllowed(this), this::showAdbHelp);
@@ -1694,9 +1711,9 @@ public class MainActivity extends Activity {
                 .setMessage(msg)
                 .setPositiveButton("Komutu kopyala", (d, w) -> {
                     ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("adb", ADB_CMD));
-                    toast("Kopyalandı");
+                    toast(L.t("Kopyalandı"));
                 })
-                .setNegativeButton("Kapat", null).show();
+                .setNegativeButton(L.t("Kapat"), null).show();
     }
 
     void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_LONG).show(); }
