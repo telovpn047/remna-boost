@@ -59,18 +59,24 @@ final class Boost {
         return mi.totalMem;
     }
 
-    /** Arka plandaki (önbellekteki) diğer uygulamaları kapatır; kapatılan uygulama sayısını döner. */
-    static int killBackground(Context c, String keep) {
+    /**
+     * Arka plan temizliği. Yalnız önbellekteki (arka planda bekleyen) işlemler kapatılır; ön plan servisleri (VPN,
+     * müzik vb.) etkilenmez. Global "am kill-all" kullanılmaz.
+     * mode: "smart" → yalnız RAM baskısı varsa (boş RAM < %25), "aggressive" → her zaman, "off" → hiç.
+     * Dönüş: kapatılan uygulama sayısı; atlandıysa -1.
+     */
+    static int cleanup(Context c, String keep, String mode) {
+        if ("off".equals(mode)) return -1;
+        if ("smart".equals(mode) && availRam(c) * 100 / Math.max(1, totalRam(c)) >= 25) return -1;
         ActivityManager am = (ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
         PackageManager pm = c.getPackageManager();
         int n = 0;
+        // <queries> ile yalnız başlatıcıda görünen uygulamalar listelenir (QUERY_ALL_PACKAGES gerekmez)
         for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
             if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
             if (ai.packageName.equals(c.getPackageName()) || ai.packageName.equals(keep)) continue;
-            try { am.killBackgroundProcesses(ai.packageName); n++; } catch (Throwable ignored) {}
+            try { am.killBackgroundProcesses(ai.packageName); n++; } catch (SecurityException ignored) {}
         }
-        if (Sh.granted()) Sh.exec("am kill-all");
-        System.gc();
         return n;
     }
 
@@ -185,67 +191,6 @@ final class Boost {
             if (e.getEventType() == UsageEvents.Event.ACTIVITY_RESUMED) last = e.getPackageName();
         }
         return last;
-    }
-
-    /** Şifreli DNS (Cloudflare DoH) ile A kaydı: yerel DNS engelini aşar. */
-    static String doh(String host) {
-        for (String base : new String[]{"https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query", "https://dns.google/resolve"}) {
-            try {
-                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(base + "?name=" + host + "&type=A").openConnection();
-                c.setRequestProperty("accept", "application/dns-json");
-                c.setConnectTimeout(5000);
-                c.setReadTimeout(5000);
-                String js = new java.util.Scanner(c.getInputStream(), "UTF-8").useDelimiter("\\A").next();
-                org.json.JSONArray a = new org.json.JSONObject(js).optJSONArray("Answer");
-                if (a != null) for (int i = 0; i < a.length(); i++)
-                    if (a.getJSONObject(i).optInt("type") == 1) return a.getJSONObject(i).optString("data");
-            } catch (Exception ignored) {}
-        }
-        return null;
-    }
-
-    /** Engelli alan adına düz HTTP isteği: DoH ile çözülen IP'ye bağlanır, Host başlığını korur. Gövdeyi döner. */
-    static String httpVia(String host, String method, String path, String body) throws java.io.IOException {
-        String ip = doh(host);
-        if (ip == null && host.equals("ip-api.com")) ip = "208.95.112.1"; // DoH da engelliyse bilinen IP
-        if (ip == null) ip = host;
-        try (Socket s = new Socket()) {
-            s.connect(new InetSocketAddress(ip, 80), 8000);
-            s.setSoTimeout(10000);
-            byte[] b = body == null ? new byte[0] : body.getBytes("UTF-8");
-            String req = method + " " + path + " HTTP/1.1\r\nHost: " + host + "\r\nConnection: close\r\n"
-                    + (body != null ? "Content-Type: application/json\r\nContent-Length: " + b.length + "\r\n" : "") + "\r\n";
-            java.io.OutputStream o = s.getOutputStream();
-            o.write(req.getBytes("UTF-8"));
-            o.write(b);
-            o.flush();
-            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
-            java.io.InputStream in = s.getInputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
-            String r = bo.toString("UTF-8");
-            int i = r.indexOf("\r\n\r\n");
-            String hdr = i > 0 ? r.substring(0, i).toLowerCase() : "";
-            String bodyOut = i > 0 ? r.substring(i + 4) : r;
-            if (hdr.contains("transfer-encoding: chunked")) bodyOut = unchunk(bodyOut);
-            return bodyOut;
-        }
-    }
-
-    static String unchunk(String s) {
-        StringBuilder out = new StringBuilder();
-        int p = 0;
-        while (p < s.length()) {
-            int e = s.indexOf("\r\n", p);
-            if (e < 0) break;
-            int len;
-            try { len = Integer.parseInt(s.substring(p, e).trim().split(";")[0], 16); } catch (Exception x) { break; }
-            if (len == 0) break;
-            out.append(s, e + 2, Math.min(s.length(), e + 2 + len));
-            p = e + 2 + len + 2;
-        }
-        return out.toString();
     }
 
     /**

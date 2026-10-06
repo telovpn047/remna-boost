@@ -321,7 +321,9 @@ public class MainActivity extends Activity {
 
         // ayarlar
         root.addView(section("BOOST"));
-        root.addView(toggle("Arka plan uygulamalarını kapat", "Boost sırasında RAM boşaltır", "kill", true, null));
+        root.addView(choice("Arka plan temizliği", "cleanup", "smart",
+                new String[]{"Akıllı (yalnız RAM azsa)", "Agresif (her zaman)", "Kapalı"},
+                new String[]{"smart", "aggressive", "off"}, null));
 
         root.addView(section("ANDROID OYUN MODU · SHIZUKU"));
         root.addView(choice("Oyun modu", "gm_mode", "off",
@@ -341,10 +343,13 @@ public class MainActivity extends Activity {
         gmNote.setPadding(dp(4), dp(8), dp(4), 0);
         root.addView(gmNote);
 
-        root.addView(section("SOĞUTMA"));
-        root.addView(choice("Isınınca 60 Hz'e düş", "cool_temp", "off",
-                new String[]{"Kapalı", "Pil 40°C olunca", "Pil 42°C olunca", "Pil 45°C olunca"},
-                new String[]{"off", "40", "42", "45"}, null));
+        root.addView(section("TERMAL KORUMA"));
+        root.addView(choice("Termal koruma", "thermal", "standard",
+                new String[]{"Standart · 40°C ılık (90 Hz) · 42°C sıcak (60 Hz) · 44°C koruma", "Hassas · 38 / 40 / 42°C", "Kapalı"},
+                new String[]{"standard", "sensitive", "off"}, null));
+        TextView thNote = text("Isınınca ekran hemen düşürülür; soğuyunca 1 dakika beklenip birer kademe geri yükseltilir. Oyun bitince orijinal ayarlar geri yüklenir.", 11, TX3, false);
+        thNote.setPadding(dp(4), dp(8), dp(4), 0);
+        root.addView(thNote);
 
         root.addView(section("OYUN SIRASINDA"));
         root.addView(choice("Rahatsız etme", "dnd_mode", "priority",
@@ -376,6 +381,21 @@ public class MainActivity extends Activity {
         root.addView(choice("Oyundan çıkınca kapat", "autostop", "30",
                 new String[]{"Kapalı (elle kapat)", "15 sn sonra", "30 sn sonra", "60 sn sonra"}, new String[]{"0", "15", "30", "60"}, this::askUsage));
 
+        root.addView(section("GİZLİLİK"));
+        root.addView(toggle("Sunucu geçmişi kaydı", "PUBG'nin bağlandığı sunucu IP'leri yalnız bu cihazda saklanır", "srv_record", true, null));
+        root.addView(toggle("Çevrimiçi konum sorgusu", "Bilinmeyen IP'ler ipwho.is'e (HTTPS) gönderilir · varsayılan kapalı", "geo_online", false, null), mlp(8));
+        LinearLayout clr = card();
+        clr.addView(text("Sunucu geçmişini temizle", 15, TX, true), new LinearLayout.LayoutParams(0, -2, 1));
+        clr.addView(text("Temizle", 14, RED, true));
+        clr.setOnClickListener(v -> new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Sunucu geçmişi silinsin mi?").setMessage("Kayıtlı tüm sunucu IP'leri, konumlar ve ölçümler silinir.")
+                .setPositiveButton("Sil", (d, w) -> { ServerLog.clear(this); histSub.setText("Kayıtlar silindi"); toast("Sunucu geçmişi silindi"); })
+                .setNegativeButton("Vazgeç", null).show());
+        root.addView(clr, mlp(8));
+        TextView pv = text("Konum bilgisi önce uygulamanın içindeki tablodan bulunur; dışarıya veri gönderilmez. Çevrimiçi sorgu yalnız siz açarsanız yapılır.", 11, TX3, false);
+        pv.setPadding(dp(4), dp(8), dp(4), 0);
+        root.addView(pv);
+
         root.addView(section("İZİNLER"));
         permBox = new LinearLayout(this);
         permBox.setOrientation(LinearLayout.VERTICAL);
@@ -395,19 +415,19 @@ public class MainActivity extends Activity {
     static final String[] PROFILE_SUB = {"En yüksek FPS", "Stabil 60 FPS", "Az ısınma"};
 
     void applyProfile(String id) {
-        SharedPreferences.Editor e = prefs.edit().putString("profile", id).putBoolean("kill", true);
+        SharedPreferences.Editor e = prefs.edit().putString("profile", id);
         switch (id) {
             case "perf":
                 e.putString("gm_mode", "performance").putString("gm_scale", "off").putString("gm_fps", "off")
-                        .putString("hz_mode", "max").putString("anim_mode", "0.5").putString("cool_temp", "off");
+                        .putString("hz_mode", "max").putString("anim_mode", "0.5").putString("thermal", "standard").putString("cleanup", "smart");
                 break;
             case "balanced":
                 e.putString("gm_mode", "performance").putString("gm_scale", "off").putString("gm_fps", "60")
-                        .putString("hz_mode", "max").putString("anim_mode", "0.5").putString("cool_temp", "43");
+                        .putString("hz_mode", "max").putString("anim_mode", "0.5").putString("thermal", "standard").putString("cleanup", "smart");
                 break;
             default: // cool
                 e.putString("gm_mode", "battery").putString("gm_scale", "0.8").putString("gm_fps", "60")
-                        .putString("hz_mode", "60").putString("anim_mode", "0.5").putString("cool_temp", "40");
+                        .putString("hz_mode", "60").putString("anim_mode", "0.5").putString("thermal", "sensitive").putString("cleanup", "off");
         }
         e.apply();
         if (BoostService.running) Tweaks.reapply(this);
@@ -523,7 +543,7 @@ public class MainActivity extends Activity {
         sw.setOnCheckedChangeListener((b, on) -> {
             prefs.edit().putBoolean(key, on).apply();
             if (on && onEnable != null) onEnable.run();
-            if ("kill".equals(key)) markCustom();
+
             if (BoostService.running) Tweaks.reapply(this);
         });
         l.addView(sw);
@@ -695,7 +715,7 @@ public class MainActivity extends Activity {
         String ge = prefs.getString("geo_err", null);
         if (ge != null && rows.size() > 0 && "konum yok".equals(rows.get(0).where)) sb.append("\nKonum hatası: ").append(ge).append('\n');
         if (ge != null && rows.size() > 0 && "konum yok".equals(rows.get(0).where))
-            sb.append("İpucu: Konum servisi engelli. VPN'i açıp bir kez Analiz'e bas; konumlar kaydedilir, sonra VPN'i kapatabilirsin.\n");
+            sb.append("İpucu: Bilinmeyen konumlar için Ayarlar → Gizlilik → Çevrimiçi konum sorgusu'nu açabilirsin.\n");
         sb.append("\nUDP sunucuları PUBG'nin eşleştirmede yokladığı bölge noktalarıdır; maçın kendi sunucusu root olmadan görünmez.");
         sb.append("\n* = şimdi ölçülemedi, önceki ölçüm gösteriliyor.");
         if (Boost.vpnActive(this)) sb.append("\n⚠ VPN açık: çoğu VPN ping/yoklamayı tünelden geçirmez. Doğru sonuç için VPN'i kapatıp tekrar analiz et.");
@@ -721,16 +741,22 @@ public class MainActivity extends Activity {
                 }).setNegativeButton("Kapat", null).show();
         StringBuilder sb = new StringBuilder("Sunucu: " + ip + "\n");
         new Thread(() -> {
-            // konum / sağlayıcı (ip-api.com)
-            try {
-                String js = Boost.httpVia("ip-api.com", "GET", "/json/" + ip + "?fields=status,country,regionName,city,isp,org,as&lang=tr", null);
-                org.json.JSONObject o = new org.json.JSONObject(js);
-                sb.append("Konum: ").append(o.optString("city")).append(", ").append(o.optString("regionName")).append(", ").append(o.optString("country")).append('\n');
-                sb.append("Sağlayıcı: ").append(o.optString("isp")).append('\n');
-                sb.append("Ağ: ").append(o.optString("as")).append('\n');
-            } catch (Exception e) {
-                sb.append("Konum alınamadı: ").append(e.getClass().getSimpleName()).append('\n');
-            }
+            // konum: önce yerel tablo; çevrimiçi sorgu yalnız kullanıcı izin verdiyse (Gizlilik)
+            String[] lg = ServerLog.localGeo(ip);
+            if (lg != null) sb.append("Konum: ").append(lg[3]).append(", ").append(lg[2]).append("  (yerel veri)\n").append("Ağ: ").append(lg[4]).append('\n');
+            else if (prefs.getBoolean("geo_online", false)) {
+                try {
+                    java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL("https://ipwho.is/" + ip + "?lang=tr").openConnection();
+                    c.setConnectTimeout(6000);
+                    c.setReadTimeout(6000);
+                    org.json.JSONObject o = new org.json.JSONObject(new java.util.Scanner(c.getInputStream(), "UTF-8").useDelimiter("\\A").next());
+                    org.json.JSONObject con = o.optJSONObject("connection");
+                    sb.append("Konum: ").append(o.optString("city")).append(", ").append(o.optString("country")).append("  (ipwho.is)\n");
+                    if (con != null) sb.append("Ağ: AS").append(con.optInt("asn")).append(' ').append(con.optString("org")).append('\n');
+                } catch (Exception e) {
+                    sb.append("Konum alınamadı (").append(e.getClass().getSimpleName()).append(")\n");
+                }
+            } else sb.append("Konum: bilinmiyor (çevrimiçi konum sorgusu Ayarlar → Gizlilik'te kapalı)\n");
             sb.append("VPN: ").append(Boost.vpnActive(this) ? "açık" : "kapalı").append('\n');
             post(dlg, body, sb + "\nPing ölçülüyor…");
             if (!Sh.granted()) { post(dlg, body, sb + "\nPing ve rota için Shizuku gerekli."); return; }
@@ -848,7 +874,7 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(18), dp(8), dp(18), dp(8));
         boolean vpn = Boost.vpnActive(this);
-        TextView head = text((vpn ? "VPN üzerinden ölçülüyor" : "Doğrudan bağlantı (VPN kapalı)") + " · her bölge 6 deneme · mümkünse doğrudan PUBG veri merkezine ICMP", 12, TX2, false);
+        TextView head = text((vpn ? "VPN üzerinden ölçülüyor" : "Doğrudan bağlantı (VPN kapalı)") + " · her bölge 10 örnek · skor: %40 ortanca, %25 dalgalanma, %25 kayıp, %10 kararlılık", 12, TX2, false);
         box.addView(head);
         TextView rec = text("Ölçülüyor…", 15, OR, true);
         rec.setPadding(0, dp(8), 0, dp(10));
@@ -887,44 +913,34 @@ public class MainActivity extends Activity {
         for (int i = 0; i < n; i++) {
             final int idx = i;
             new Thread(() -> {
-                int ok = 0, min = Integer.MAX_VALUE;
-                long sum = 0, jit = 0;
-                int prev = -1;
                 java.util.List<String> dcs = Boost.dcFor(this, regionOfHost(REGIONS[idx][1]) == null ? REGIONS[idx][0] : regionOfHost(REGIONS[idx][1]));
                 String dcIp = null;
                 for (String ip : dcs) if (Boost.icmpOnce(ip, 1200, 1) > 0) { dcIp = ip; break; }
                 final String target = dcIp;
-                for (int k = 0; k < 6; k++) {
-                    int r = target != null ? Boost.icmpOnce(target, 1200, k + 2) : Boost.rtt(REGIONS[idx][1]);
-                    if (r > 0) {
-                        ok++; sum += r; min = Math.min(min, r);
-                        if (prev > 0) jit += Math.abs(r - prev);
-                        prev = r;
-                    }
-                    try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+                PingStats ps = new PingStats();
+                for (int k = 0; k < 10; k++) {
+                    ps.add(target != null ? Boost.icmpOnce(target, 1200, k + 2) : Boost.rtt(REGIONS[idx][1]));
+                    try { Thread.sleep(120); } catch (InterruptedException ignored) {}
                 }
-                final int fOk = ok, fMin = min;
-                final long avg = ok > 0 ? sum / ok : -1, jitter = ok > 1 ? jit / (ok - 1) : 0;
-                final int loss = (6 - ok) * 100 / 6;
                 h.post(() -> {
                     if (!dlg.isShowing()) return;
-                    if (fOk == 0) {
-                        res[idx].setText("Ulaşılamadı");
+                    if (ps.empty()) {
+                        res[idx].setText("Ulaşılamadı · ölçülebilir PUBG sunucusu yok (oyunda dene)");
                         res[idx].setTextColor(RED);
-                        best[idx] = Integer.MAX_VALUE;
+                        best[idx] = -1;
                     } else {
-                        res[idx].setText((target != null ? "" : "≈") + fMin + " ms  ·  ort " + avg + "  ·  dalgalanma " + jitter + "  ·  kayıp %" + loss
-                                + (target != null ? "  ·  PUBG sunucusu" : "  ·  yaklaşık"));
-                        res[idx].setTextColor(fMin < 80 ? GREEN : fMin < 150 ? 0xFFFBBF24 : RED);
-                        // oyunda önemli olan: düşük ping + az dalgalanma + kayıpsız
-                        best[idx] = (int) (fMin + jitter * 2 + loss * 10);
+                        int sc = ps.score();
+                        res[idx].setText("skor " + sc + "  ·  " + ps.summary() + (target != null ? "\nYöntem: PUBG SUNUCUSU (ICMP)" : "\nYöntem: TAHMİNİ (HTTP)"));
+                        int m = ps.median();
+                        res[idx].setTextColor(m < 80 ? GREEN : m < 150 ? 0xFFFBBF24 : RED);
+                        best[idx] = target != null ? sc : sc / 2; // tahmini ölçümler öneride geri planda
                     }
                     done[0]++;
                     if (done[0] == n) {
                         int b = 0;
-                        for (int j = 1; j < n; j++) if (best[j] < best[b]) b = j;
-                        if (best[b] == Integer.MAX_VALUE) { rec.setText("Hiçbir bölgeye ulaşılamadı"); rec.setTextColor(RED); return; }
-                        rec.setText("Önerilen: " + REGIONS[b][0]);
+                        for (int j = 1; j < n; j++) if (best[j] > best[b]) b = j;
+                        if (best[b] <= 0) { rec.setText("Hiçbir bölge ölçülemedi"); rec.setTextColor(RED); return; }
+                        rec.setText("Önerilen bölge: " + REGIONS[b][0] + "  (skor " + best[b] + ")\nEn düşük ve en stabil bölge budur; fiziksel gecikmeyi değiştirmez.");
                         GradientDrawable g = round(0x1AF97316, 20);
                         g.setStroke(dp(1), OR);
                         rows[b].setBackground(g);
@@ -989,24 +1005,82 @@ public class MainActivity extends Activity {
             toast("Ping ve diğer özellikler çalışıyor. FPS göstergesi için isteğe bağlı Shizuku gerekir.");
         }
         big.setBusy(true);
-        btnLabel.setText("…");
         new Thread(() -> {
-            String gm = Sh.granted() ? Perf.applyGameMode(this, game) : null;
-            long before = Boost.availRam(this);
-            int killed = prefs.getBoolean("kill", true) ? Boost.killBackground(this, game) : 0;
-            try { Thread.sleep(900); } catch (InterruptedException ignored) {}
+            java.util.List<String> done = new java.util.ArrayList<>(), skipped = new java.util.ArrayList<>();
+            step("CİHAZ ANALİZİ");
+            long total = Boost.totalRam(this), before = Boost.availRam(this);
+            float temp = Boost.batteryTemp(this);
+            step("RAM KONTROLÜ");
+            String mode = prefs.getString("cleanup", "smart");
+            int killed = Boost.cleanup(this, game, mode);
+            sleep(700);
             long freed = Math.max(0, Boost.availRam(this) - before);
+            if (killed >= 0) done.add(String.format(java.util.Locale.US, "Arka plan temizliği · %d uygulama · +%d MB", killed, freed / 1048576));
+            else skipped.add("off".equals(mode) ? "Temizlik kapalı" : "Temizlik gerekmedi · RAM yeterli (%" + (before * 100 / Math.max(1, total)) + " boş)");
+            step("AĞ KONTROLÜ");
+            int ping = -1;
+            String reg = regionOfHost(prefs.getString("ping_host", ""));
+            for (String ip : Boost.dcFor(this, reg == null ? "Avrupa" : reg)) { ping = Boost.icmp(ip); if (ping > 0) break; }
+            step("SICAKLIK KONTROLÜ");
+            float[] th = Thermal.thresholds(this);
+            Thermal.State ts = th == null ? Thermal.State.NORMAL : Thermal.classify(temp, th);
+            if (th != null) done.add("Termal koruma · şu an " + Thermal.label(ts) + String.format(java.util.Locale.US, " (%.0f°C)", temp));
+            step("OPTİMİZASYON");
+            String gm = Sh.granted() ? Perf.applyGameMode(this, game) : null;
+            if (gm != null && !gm.equals("kapalı") && !gm.toLowerCase().contains("error") && !gm.toLowerCase().contains("exception"))
+                done.add("Android oyun modu · " + prefs.getString("gm_mode", "performance"));
+            else if (!Sh.granted() && !"off".equals(prefs.getString("gm_mode", "off"))) skipped.add("Android oyun modu · Shizuku gerekli");
+            boolean secure = Tweaks.secureAllowed(this);
+            String hz = prefs.getString("hz_mode", "max");
+            if (!"off".equals(hz)) {
+                if (secure) done.add("Yenileme hızı · " + ("max".equals(hz) ? Math.round(Tweaks.maxRefresh(this)) : hz) + " Hz");
+                else skipped.add("Sabit yenileme hızı · ADB izni gerekli");
+            }
+            if (!"off".equals(prefs.getString("dnd_mode", "priority"))) {
+                if (Boost.dndAllowed(this)) done.add("Rahatsız etme");
+                else skipped.add("Rahatsız etme · izin gerekli");
+            }
+            if (prefs.getBoolean("touch", true) && Tweaks.touchSupported(this)) {
+                if (secure || Sh.granted()) done.add("Dokunma hassasiyeti");
+                else skipped.add("Dokunma hassasiyeti · ADB izni gerekli");
+            }
+            if (!"off".equals(prefs.getString("ov_mode", "full")) && Settings.canDrawOverlays(this)) done.add("Oyun üstü panel");
+            final int fPing = ping;
             h.post(() -> {
                 big.setBusy(false);
                 btnLabel.setText("BOOST");
-                toast(String.format(java.util.Locale.US, "%d uygulama kapatıldı · %d MB boşaldı", killed, freed / 1048576)
-                        + (gm != null && !gm.equals("kapalı") ? "\nAndroid oyun modu: " + gm : ""));
-                Intent s = new Intent(this, BoostService.class).putExtra("game", game);
-                startForegroundService(s);
-                Intent launch = getPackageManager().getLaunchIntentForPackage(game);
-                if (launch != null) startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                Intent sv = new Intent(this, BoostService.class).putExtra("game", game);
+                startForegroundService(sv);
+                showBoostResult(done, skipped, fPing, temp);
             });
         }).start();
+    }
+
+    void step(String t) { h.post(() -> { btnLabel.setTextSize(14); btnLabel.setText(t); }); sleep(350); }
+
+    static void sleep(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
+
+    void showBoostResult(java.util.List<String> done, java.util.List<String> skipped, int ping, float temp) {
+        btnLabel.setTextSize(26);
+        StringBuilder sb = new StringBuilder();
+        sb.append(gameName.getText()).append("\n\n");
+        sb.append(String.format(java.util.Locale.US, "RAM  %s boş   ·   PING  %s   ·   SICAKLIK  %.0f°C%n%n",
+                Boost.fmtGb(Boost.availRam(this)), ping > 0 ? ping + " ms" : "—", temp));
+        sb.append("Uygulananlar:\n");
+        for (String d : done) sb.append("✓ ").append(d).append('\n');
+        if (!skipped.isEmpty()) {
+            sb.append("\nUygulanmayanlar:\n");
+            for (String k : skipped) sb.append("–  ").append(k).append('\n');
+        }
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("✓ BOOST TAMAMLANDI")
+                .setMessage(sb.toString())
+                .setPositiveButton("OYUNU BAŞLAT", (d, w) -> {
+                    Intent launch = getPackageManager().getLaunchIntentForPackage(game);
+                    if (launch != null) startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                })
+                .setNegativeButton("Kapat", null)
+                .show();
     }
 
     final Runnable stats = new Runnable() {
@@ -1017,15 +1091,17 @@ public class MainActivity extends Activity {
             float temp = Boost.batteryTemp(MainActivity.this);
             tempTv.setText(String.format(java.util.Locale.US, "%.0f°C", temp));
             tempTv.setTextColor(temp < 38 ? TX : temp < 43 ? 0xFFFBBF24 : RED);
-            String host = prefs.getString("ping_host", REGIONS[0][1]);
+            String reg = regionOfHost(prefs.getString("ping_host", ""));
             new Thread(() -> {
-                int p = Boost.ping(host, 443);
+                int p = -1;
+                for (String ip : Boost.dcFor(MainActivity.this, reg == null ? "Avrupa" : reg)) { p = Boost.icmp(ip); if (p > 0) break; }
+                final int fp = p;
                 h.post(() -> {
-                    pingTv.setText(p < 0 ? "—" : p + " ms");
-                    pingTv.setTextColor(p < 0 ? RED : p < 80 ? GREEN : p < 150 ? 0xFFFBBF24 : RED);
+                    pingTv.setText(fp < 0 ? "—" : fp + " ms");
+                    pingTv.setTextColor(fp < 0 ? RED : fp < 80 ? GREEN : fp < 150 ? 0xFFFBBF24 : RED);
                 });
             }).start();
-            btnLabel.setText(BoostService.running ? "OYUNDA" : "BOOST");
+            if (!big.busy) { btnLabel.setTextSize(26); btnLabel.setText(BoostService.running ? "OYUNDA" : "BOOST"); }
             h.postDelayed(this, 3000);
         }
     };

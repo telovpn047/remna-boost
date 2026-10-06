@@ -37,13 +37,13 @@ public class BoostService extends Service {
     volatile int lastFps = -1;
     String game;
     long notForegroundSince = 0;
-    PowerManager.WakeLock wl;
+
     Notification notif;
     volatile int lastPing = -1;
     volatile String pingSrc = "";
     volatile float lastCpu = -1;
     Perf.Session session;
-    boolean cooling = false;
+    final Thermal thermal = new Thermal();
     int fpsFails = 0;
 
     int dp(float v) { return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()); }
@@ -78,9 +78,7 @@ public class BoostService extends Service {
         Tweaks.apply(this);
         if (!Boost.prefs(this).getString("dnd_mode", "priority").equals("off")) Boost.dndOn(this);
         if (!Boost.prefs(this).getString("ov_mode", "full").equals("off") && Settings.canDrawOverlays(this)) showPanel();
-        PowerManager pm = getSystemService(PowerManager.class);
-        wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "boost:game");
-        wl.acquire(4 * 3600_000L);
+        // WakeLock yok: oyun ekranı açıkken zaten uyanık; panel ve ölçümler için gerekmez.
         h.post(tick);
         new Thread(pinger).start();
         Sh.layer = null;
@@ -185,19 +183,11 @@ public class BoostService extends Service {
             boolean inGame = game == null || !Boost.usageAllowed(BoostService.this)
                     || game.equals(Boost.lastForeground(BoostService.this, game));
             if (session != null && inGame) session.add(lastFps, lastPing, bt, lastCpu);
-            // soğutma modu: pil eşiği aşınca 60 Hz'e in, 2° düşünce eski ayara dön
-            String ct = Boost.prefs(BoostService.this).getString("cool_temp", "off");
-            if (!ct.equals("off")) {
-                float thr = Float.parseFloat(ct);
-                if (!cooling && bt >= thr) {
-                    cooling = true;
-                    Tweaks.forceHz(BoostService.this, 60);
-                    notifyCool(bt);
-                } else if (cooling && bt <= thr - 2) {
-                    cooling = false;
-                    Tweaks.reapply(BoostService.this);
-                    getSystemService(NotificationManager.class).cancel(2);
-                }
+            // termal yönetici: ısınınca kademeli düşür (WARM 90 Hz, HOT/PROTECT 60 Hz), soğuyunca bekleyip yükselt
+            Thermal.State ns = thermal.update(BoostService.this, bt);
+            if (ns != null) {
+                if (ns.ordinal() >= Thermal.State.HOT.ordinal()) notifyCool(bt, ns);
+                else getSystemService(NotificationManager.class).cancel(2);
             }
             // oyundan çıkınca (30 sn) her şeyi geri al
             if (game != null && Boost.usageAllowed(BoostService.this)) {
@@ -214,12 +204,12 @@ public class BoostService extends Service {
         }
     };
 
-    void notifyCool(float t) {
+    void notifyCool(float t, Thermal.State st) {
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel("cool", "Soğutma", NotificationManager.IMPORTANCE_DEFAULT));
         nm.notify(2, new Notification.Builder(this, "cool").setSmallIcon(R.drawable.ic_stat).setColor(0xFFEF4444)
-                .setContentTitle(String.format(java.util.Locale.US, "Telefon ısındı (%.0f°C)", t))
-                .setContentText("Soğutma modu: ekran 60 Hz'e düşürüldü").setAutoCancel(true).build());
+                .setContentTitle(String.format(java.util.Locale.US, "%s · %.0f°C", Thermal.label(st), t))
+                .setContentText("Ekran 60 Hz'e düşürüldü; soğuyunca kademeli olarak geri yükselecek").setAutoCancel(true).build());
     }
 
     static String shortReg(String r) {
@@ -291,7 +281,7 @@ public class BoostService extends Service {
         if (panel != null) try { wm.removeView(panel); } catch (Exception ignored) {}
         Boost.dndOff(this);
         Tweaks.restore(this);
-        if (wl != null && wl.isHeld()) wl.release();
+
         super.onDestroy();
     }
 

@@ -30,7 +30,7 @@ final class ServerLog {
 
     /** Görülen bağlantıları kaydeder. vpn: o an VPN açık mıydı. */
     static synchronized void record(Context c, List<String[]> conns, boolean vpn) {
-        if (conns.isEmpty()) return;
+        if (conns.isEmpty() || !Boost.prefs(c).getBoolean("srv_record", true)) return;
         JSONObject log = load(c);
         long now = System.currentTimeMillis();
         try {
@@ -59,31 +59,64 @@ final class ServerLog {
         save(c, log);
     }
 
-    /** Konumu olmayan IP'ler için ip-api.com toplu sorgu (en fazla 100). */
+    /**
+     * Yerel (cihaz içi) GeoIP: Türkmenistan'dan yapılan analizlerde doğrulanmış PUBG veri merkezi aralıkları.
+     * Hiçbir veri dışarı gönderilmez. {ülkeKodu, ülke, şehir, ağ}
+     */
+    static final String[][] LOCAL_GEO = {
+            {"49.51.130.", "DE", "Almanya", "Frankfurt", "AS132203 Tencent"},
+            {"162.62.", "DE", "Almanya", "Frankfurt", "AS132203 Tencent"},
+            {"101.32.", "SG", "Singapur", "Singapur", "AS132203 Tencent"},
+            {"150.109.", "SG", "Singapur", "Singapur", "AS132203 Tencent"},
+            {"119.28.121.", "SG", "Singapur", "Singapur", "AS132203 Tencent"},
+            {"119.28.149.", "KR", "Güney Kore", "Seul", "AS132203 Tencent"},
+            {"43.129.", "HK", "Hong Kong", "Hong Kong", "AS132203 Tencent"},
+            {"170.106.", "US", "ABD", "Santa Clara", "AS132203 Tencent"},
+            {"20.74.", "AE", "BAE", "Dubai", "AS8075 Microsoft Azure"},
+    };
+
+    static String[] localGeo(String ip) {
+        for (String[] g : LOCAL_GEO) if (ip.startsWith(g[0])) return g;
+        return null;
+    }
+
+    /** Konumu olmayan kayıtları doldurur: önce yerel tablo; kullanıcı izin verdiyse HTTPS (ipwho.is), en fazla 30. */
     static void enrich(Context c) {
         JSONObject log = load(c);
-        JSONArray q = new JSONArray();
+        boolean online = Boost.prefs(c).getBoolean("geo_online", false);
+        int asked = 0;
+        boolean changed = false;
         for (Iterator<String> it = log.keys(); it.hasNext(); ) {
             String ip = it.next();
-            if (!log.optJSONObject(ip).has("cc") && q.length() < 100) q.put(ip);
-        }
-        if (q.length() == 0) return;
-        try {
-            String js = Boost.httpVia("ip-api.com", "POST", "/batch?fields=query,status,countryCode,country,city,as&lang=tr", q.toString());
-            JSONArray r = new JSONArray(js);
-            for (int i = 0; i < r.length(); i++) {
-                JSONObject g = r.getJSONObject(i);
-                JSONObject e = log.optJSONObject(g.optString("query"));
-                if (e == null || !"success".equals(g.optString("status"))) continue;
-                e.put("cc", g.optString("countryCode"));
-                e.put("country", g.optString("country"));
-                e.put("city", g.optString("city"));
-                e.put("as", g.optString("as"));
+            JSONObject e = log.optJSONObject(ip);
+            if (e == null || e.has("cc")) continue;
+            try {
+                String[] g = localGeo(ip);
+                if (g != null) {
+                    e.put("cc", g[1]); e.put("country", g[2]); e.put("city", g[3]); e.put("as", g[4]); e.put("geo", "yerel");
+                    changed = true;
+                } else if (online && asked < 30) {
+                    asked++;
+                    HttpURLConnection h = (HttpURLConnection) new URL("https://ipwho.is/" + ip + "?fields=success,country_code,country,city,connection&lang=tr").openConnection();
+                    h.setConnectTimeout(6000);
+                    h.setReadTimeout(6000);
+                    String js;
+                    try (InputStream in = h.getInputStream()) { js = new Scanner(in, "UTF-8").useDelimiter("\\A").next(); }
+                    JSONObject g2 = new JSONObject(js);
+                    if (!g2.optBoolean("success")) continue;
+                    JSONObject con = g2.optJSONObject("connection");
+                    e.put("cc", g2.optString("country_code"));
+                    e.put("country", g2.optString("country"));
+                    e.put("city", g2.optString("city"));
+                    if (con != null) e.put("as", "AS" + con.optInt("asn") + " " + con.optString("org"));
+                    e.put("geo", "ipwho.is");
+                    changed = true;
+                }
+            } catch (Exception ex) {
+                Boost.prefs(c).edit().putString("geo_err", ex.getClass().getSimpleName()).apply();
             }
-            save(c, log);
-        } catch (Exception e) {
-            Boost.prefs(c).edit().putString("geo_err", e.getClass().getSimpleName() + ": " + e.getMessage()).apply();
         }
+        if (changed) save(c, log);
     }
 
     /** Konum alınamazsa: bilinen büyük ağ aralıklarından sağlayıcı tahmini. */
