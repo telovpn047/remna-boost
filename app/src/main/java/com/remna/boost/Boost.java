@@ -207,6 +207,7 @@ final class Boost {
     /** Engelli alan adına düz HTTP isteği: DoH ile çözülen IP'ye bağlanır, Host başlığını korur. Gövdeyi döner. */
     static String httpVia(String host, String method, String path, String body) throws java.io.IOException {
         String ip = doh(host);
+        if (ip == null && host.equals("ip-api.com")) ip = "208.95.112.1"; // DoH da engelliyse bilinen IP
         if (ip == null) ip = host;
         try (Socket s = new Socket()) {
             s.connect(new InetSocketAddress(ip, 80), 8000);
@@ -264,7 +265,8 @@ final class Boost {
                     long d = (System.nanoTime() - t) / 1_000_000;
                     if (d < 1400) ms = (int) d; // hızlı ret = RST yanıtı
                 } catch (Exception ignored) {}
-                if (ms > 0 && (best < 0 || ms < best)) best = ms;
+                // 25 ms altı "yanıt" yerel güvenlik duvarının sahte RST'si (gerçek sunucuya fiziksel olarak imkânsız)
+                if (ms >= 25 && ms < 1400 && (best < 0 || ms < best)) best = ms;
             }
             if (best > 0) break;
         }

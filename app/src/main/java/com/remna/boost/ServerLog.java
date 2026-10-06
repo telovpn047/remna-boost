@@ -86,6 +86,21 @@ final class ServerLog {
         }
     }
 
+    /** Konum alınamazsa: bilinen büyük ağ aralıklarından sağlayıcı tahmini. */
+    static String knownNet(String ip) {
+        String[] p = ip.split("\\.");
+        if (p.length != 4) return "";
+        int a = Integer.parseInt(p[0]), b = Integer.parseInt(p[1]);
+        if ((a == 101 && (b == 32 || b == 33)) || (a == 150 && b == 109) || (a == 119 && (b == 28 || b == 29))
+                || (a == 162 && b == 62) || (a == 170 && b == 106) || (a == 43 && b >= 128) || (a == 129 && b == 226))
+            return "Tencent Cloud";
+        if (a == 20 || a == 40 || a == 52 || a == 13) return "Microsoft Azure / bulut";
+        if ((a == 172 && b == 217) || (a == 142 && b == 250) || (a == 216 && b == 58)) return "Google";
+        if (a == 23 || (a == 2 && b >= 16 && b <= 23)) return "Akamai CDN";
+        if (a == 104 && b >= 16 && b <= 31) return "Cloudflare";
+        return "";
+    }
+
     /** Ülke koduna göre PUBG lobi bölgesi. */
     static String region(String cc) {
         if (cc == null || cc.isEmpty()) return "?";
@@ -129,6 +144,7 @@ final class ServerLog {
             r.n = e.optInt("n");
             r.where = e.has("cc") ? (e.optString("city") + ", " + e.optString("country")) : "konum yok";
             r.as = e.optString("as");
+            if (r.as.isEmpty()) r.as = knownNet(ip);
             r.region = region(e.optString("cc"));
             r.vpn = e.optBoolean("vpn");
             r.direct = e.optBoolean("direct");

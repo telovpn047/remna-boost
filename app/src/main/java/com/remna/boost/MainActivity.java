@@ -492,7 +492,10 @@ public class MainActivity extends Activity {
         }
         String ge = prefs.getString("geo_err", null);
         if (ge != null && rows.size() > 0 && "konum yok".equals(rows.get(0).where)) sb.append("\nKonum hatası: ").append(ge).append('\n');
-        sb.append("\nᵗ = ICMP kapalı, TCP yoklamasıyla ölçüldü.\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
+        if (ge != null && rows.size() > 0 && "konum yok".equals(rows.get(0).where))
+            sb.append("İpucu: Konum servisi engelli. VPN'i açıp bir kez Analiz'e bas; konumlar kaydedilir, sonra VPN'i kapatabilirsin.\n");
+        sb.append("\nUDP sunucuları PUBG'nin eşleştirmede yokladığı bölge noktalarıdır; maçın kendi sunucusu root olmadan görünmez.");
+        sb.append("\nᵗ = ICMP kapalı, TCP yoklamasıyla ölçüldü. '—' = güvenilir ölçüm alınamadı.\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
         return sb.toString();
     }
 
