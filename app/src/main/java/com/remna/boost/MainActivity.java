@@ -429,12 +429,21 @@ public class MainActivity extends Activity {
             ServerLog.enrich(this);
             java.util.List<ServerLog.Row> rows = ServerLog.rows(this);
             post(dlg, body, rows.size() + " sunucu · ping ölçülüyor (" + (Boost.vpnActive(this) ? "VPN açık" : "VPN kapalı") + ")…");
-            if (Sh.granted()) {
-                java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(6);
-                for (ServerLog.Row r : rows) ex.submit(() -> { r.ping = Sh.icmp(r.ip); ServerLog.putPing(this, r.ip, r.ping); });
-                ex.shutdown();
-                try { ex.awaitTermination(90, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
-            }
+            java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(6);
+            for (ServerLog.Row r : rows) ex.submit(() -> {
+                int v = Sh.granted() ? Sh.icmp(r.ip) : -1;
+                r.how = "icmp";
+                if (v < 0) {
+                    int gp = 0;
+                    try { gp = Integer.parseInt(ServerLog.load(this).optJSONObject(r.ip).optString("port", "0")); } catch (Exception ignored) {}
+                    v = gp > 0 ? Boost.tcpProbe(r.ip, 443, 80, gp) : Boost.tcpProbe(r.ip, 443, 80);
+                    r.how = "tcp";
+                }
+                r.ping = v;
+                ServerLog.putPing(this, r.ip, v);
+            });
+            ex.shutdown();
+            try { ex.awaitTermination(120, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
             post(dlg, body, buildHistoryReport(rows));
         }).start();
     }
@@ -477,11 +486,13 @@ public class MainActivity extends Activity {
         sb.append("\n== SUNUCULAR (pinge göre) ==\n");
         for (ServerLog.Row r : rows) {
             String as = r.as.length() > 22 ? r.as.substring(0, 22) : r.as;
-            sb.append(String.format(java.util.Locale.US, "%6s  %s  %-15s %dx%n", r.ping < 0 ? "—" : r.ping + "ms", r.proto, r.ip, r.n));
+            sb.append(String.format(java.util.Locale.US, "%6s%s %s  %-15s %dx%n", r.ping < 0 ? "—" : r.ping + "ms", "tcp".equals(r.how) && r.ping > 0 ? "ᵗ" : " ", r.proto, r.ip, r.n));
             sb.append("        ").append(r.where).append(" · ").append(as)
                     .append(r.vpn && r.direct ? " · VPN+doğrudan" : r.vpn ? " · VPN'de görüldü" : " · doğrudan görüldü").append('\n');
         }
-        sb.append("\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
+        String ge = prefs.getString("geo_err", null);
+        if (ge != null && rows.size() > 0 && "konum yok".equals(rows.get(0).where)) sb.append("\nKonum hatası: ").append(ge).append('\n');
+        sb.append("\nᵗ = ICMP kapalı, TCP yoklamasıyla ölçüldü.\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
         return sb.toString();
     }
 
@@ -505,12 +516,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             // konum / sağlayıcı (ip-api.com)
             try {
-                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(
-                        "http://ip-api.com/json/" + ip + "?fields=status,country,regionName,city,isp,org,as&lang=tr").openConnection();
-                c.setConnectTimeout(6000);
-                c.setReadTimeout(6000);
-                java.io.InputStream in = c.getInputStream();
-                String js = new java.util.Scanner(in, "UTF-8").useDelimiter("\\A").next();
+                String js = Boost.httpVia("ip-api.com", "GET", "/json/" + ip + "?fields=status,country,regionName,city,isp,org,as&lang=tr", null);
                 org.json.JSONObject o = new org.json.JSONObject(js);
                 sb.append("Konum: ").append(o.optString("city")).append(", ").append(o.optString("regionName")).append(", ").append(o.optString("country")).append('\n');
                 sb.append("Sağlayıcı: ").append(o.optString("isp")).append('\n');
@@ -522,7 +528,9 @@ public class MainActivity extends Activity {
             post(dlg, body, sb + "\nPing ölçülüyor…");
             if (!Sh.granted()) { post(dlg, body, sb + "\nPing ve rota için Shizuku gerekli."); return; }
             int p = Sh.icmp(ip);
-            sb.append("Ping: ").append(p < 0 ? "yanıt yok (sunucu ICMP'ye kapalı olabilir)" : p + " ms").append("\n\n");
+            String how = "ICMP";
+            if (p < 0) { p = Boost.tcpProbe(ip, 443, 80, 8080); how = "TCP yoklama"; }
+            sb.append("Ping: ").append(p < 0 ? "yanıt yok" : p + " ms (" + how + ")").append("\n\n");
             sb.append("Rota (traceroute):\n");
             post(dlg, body, sb + "…");
             for (String[] hop : Sh.trace(ip, 20)) {

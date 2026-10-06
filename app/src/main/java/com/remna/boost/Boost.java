@@ -187,6 +187,90 @@ final class Boost {
         return last;
     }
 
+    /** Şifreli DNS (Cloudflare DoH) ile A kaydı: yerel DNS engelini aşar. */
+    static String doh(String host) {
+        for (String base : new String[]{"https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query", "https://dns.google/resolve"}) {
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(base + "?name=" + host + "&type=A").openConnection();
+                c.setRequestProperty("accept", "application/dns-json");
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(5000);
+                String js = new java.util.Scanner(c.getInputStream(), "UTF-8").useDelimiter("\\A").next();
+                org.json.JSONArray a = new org.json.JSONObject(js).optJSONArray("Answer");
+                if (a != null) for (int i = 0; i < a.length(); i++)
+                    if (a.getJSONObject(i).optInt("type") == 1) return a.getJSONObject(i).optString("data");
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    /** Engelli alan adına düz HTTP isteği: DoH ile çözülen IP'ye bağlanır, Host başlığını korur. Gövdeyi döner. */
+    static String httpVia(String host, String method, String path, String body) throws java.io.IOException {
+        String ip = doh(host);
+        if (ip == null) ip = host;
+        try (Socket s = new Socket()) {
+            s.connect(new InetSocketAddress(ip, 80), 8000);
+            s.setSoTimeout(10000);
+            byte[] b = body == null ? new byte[0] : body.getBytes("UTF-8");
+            String req = method + " " + path + " HTTP/1.1\r\nHost: " + host + "\r\nConnection: close\r\n"
+                    + (body != null ? "Content-Type: application/json\r\nContent-Length: " + b.length + "\r\n" : "") + "\r\n";
+            java.io.OutputStream o = s.getOutputStream();
+            o.write(req.getBytes("UTF-8"));
+            o.write(b);
+            o.flush();
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            java.io.InputStream in = s.getInputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            String r = bo.toString("UTF-8");
+            int i = r.indexOf("\r\n\r\n");
+            String hdr = i > 0 ? r.substring(0, i).toLowerCase() : "";
+            String bodyOut = i > 0 ? r.substring(i + 4) : r;
+            if (hdr.contains("transfer-encoding: chunked")) bodyOut = unchunk(bodyOut);
+            return bodyOut;
+        }
+    }
+
+    static String unchunk(String s) {
+        StringBuilder out = new StringBuilder();
+        int p = 0;
+        while (p < s.length()) {
+            int e = s.indexOf("\r\n", p);
+            if (e < 0) break;
+            int len;
+            try { len = Integer.parseInt(s.substring(p, e).trim().split(";")[0], 16); } catch (Exception x) { break; }
+            if (len == 0) break;
+            out.append(s, e + 2, Math.min(s.length(), e + 2 + len));
+            p = e + 2 + len + 2;
+        }
+        return out.toString();
+    }
+
+    /**
+     * TCP yoklaması (ms): ICMP'yi engelleyen sunucularda gidiş-dönüş süresi. Port açıksa bağlantı,
+     * kapalıysa sunucunun "reddedildi" (RST) yanıtı ölçülür; ikisi de bir tam gidiş-dönüştür. Yanıt yoksa -1.
+     */
+    static int tcpProbe(String ip, int... ports) {
+        int best = -1;
+        for (int port : ports) {
+            for (int k = 0; k < 2; k++) {
+                long t = System.nanoTime();
+                int ms = -1;
+                try (Socket s = new Socket()) {
+                    s.connect(new InetSocketAddress(ip, port), 1500);
+                    ms = (int) ((System.nanoTime() - t) / 1_000_000);
+                } catch (java.net.ConnectException e) {
+                    long d = (System.nanoTime() - t) / 1_000_000;
+                    if (d < 1400) ms = (int) d; // hızlı ret = RST yanıtı
+                } catch (Exception ignored) {}
+                if (ms > 0 && (best < 0 || ms < best)) best = ms;
+            }
+            if (best > 0) break;
+        }
+        return best;
+    }
+
     /** Şu an bir VPN üzerinden mi bağlıyız? */
     static boolean vpnActive(Context c) {
         try {

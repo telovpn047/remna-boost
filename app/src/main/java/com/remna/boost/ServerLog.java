@@ -69,15 +69,7 @@ final class ServerLog {
         }
         if (q.length() == 0) return;
         try {
-            HttpURLConnection h = (HttpURLConnection) new URL("http://ip-api.com/batch?fields=query,status,countryCode,country,city,as&lang=tr").openConnection();
-            h.setConnectTimeout(8000);
-            h.setReadTimeout(10000);
-            h.setDoOutput(true);
-            h.setRequestMethod("POST");
-            h.setRequestProperty("Content-Type", "application/json");
-            try (OutputStream o = h.getOutputStream()) { o.write(q.toString().getBytes("UTF-8")); }
-            String js;
-            try (InputStream in = h.getInputStream()) { js = new Scanner(in, "UTF-8").useDelimiter("\\A").next(); }
+            String js = Boost.httpVia("ip-api.com", "POST", "/batch?fields=query,status,countryCode,country,city,as&lang=tr", q.toString());
             JSONArray r = new JSONArray(js);
             for (int i = 0; i < r.length(); i++) {
                 JSONObject g = r.getJSONObject(i);
@@ -89,7 +81,9 @@ final class ServerLog {
                 e.put("as", g.optString("as"));
             }
             save(c, log);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            Boost.prefs(c).edit().putString("geo_err", e.getClass().getSimpleName() + ": " + e.getMessage()).apply();
+        }
     }
 
     /** Ülke koduna göre PUBG lobi bölgesi. */
@@ -118,7 +112,7 @@ final class ServerLog {
 
     /** Analiz sonucu satırları için yardımcı yapı. */
     static final class Row {
-        String ip, proto, where, as, region;
+        String ip, proto, where, as, region, how = "";
         int ping = -1, n;
         boolean vpn, direct;
     }
