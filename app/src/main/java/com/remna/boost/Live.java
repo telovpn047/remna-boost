@@ -46,7 +46,8 @@ final class Live {
         fpsH[pos] = f; pingH[pos] = p; tempH[pos] = Math.round(t); ftH[pos] = ftMax < 0 ? -1 : Math.round(ftMax);
         pos = (pos + 1) % N;
         if (count < N) count++;
-        if (f >= 0) sessionFps.add(f);
+        // 10 FPS altı: yükleme ekranı / arka plana geçiş — oyun performansı değil, istatistiğe katma
+        if (f >= 10) sessionFps.add(f);
     }
 
     private static int[] ordered(int[] a) {

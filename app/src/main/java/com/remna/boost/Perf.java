@@ -102,7 +102,7 @@ final class Perf {
         int stutter, heavy;
 
         void add(int f, int p, float batt, float cpu) {
-            if (f >= 0) fps.add(f);
+            if (f >= 10) fps.add(f);
             if (p > 0) ping.add(p);
             maxBatt = Math.max(maxBatt, batt);
             maxCpu = Math.max(maxCpu, cpu);

@@ -249,7 +249,7 @@ final class Sh {
                 if (t > max) max = t;
             } catch (NumberFormatException ignored) {}
         }
-        if (n < 2) { ftValid = false; return 0; }
+        if (n < 2) { ftValid = false; return -1; } // kare yok: ölçülemedi (0 FPS diye kaydetme)
         int c = 0;
         for (int i = 0; i < n; i++) if (ts[i] > max - 1_000_000_000L) c++;
         // kare süreleri: son 2 sn içindeki ardışık kareler arası (ms)
