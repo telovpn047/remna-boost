@@ -334,6 +334,9 @@ public class BoostService extends Service {
             session.icmpLoss = Live.icmpSent == 0 ? -1 : Live.icmpLost * 100f / Live.icmpSent;
             session.spikes = Live.spikes;
             session.events = Diagnose.snapshot();
+            PingStats sp0 = Live.pingStats();
+            if (!sp0.empty()) { session.medPing = sp0.median(); session.jitter = sp0.jitter(); }
+            try { session.game = getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(game, 0)).toString(); } catch (Exception ignored) {}
             session.heavy = Live.heavyTotal;
             session.save(this);
         }

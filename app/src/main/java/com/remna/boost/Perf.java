@@ -134,8 +134,13 @@ final class Perf {
         FrameMetrics metrics;
         java.util.List<Diagnose.Ev> events;
         float icmpLoss = -1;
+        float startTemp = -1, endTemp = -1;
+        String game = "";
+        int medPing = -1, jitter = -1;
 
         void add(int f, int p, float batt, float cpu) {
+            if (startTemp < 0 && batt > 0) startTemp = batt;
+            if (batt > 0) endTemp = batt;
             if (f >= 10) fps.add(f);
             if (p > 0) ping.add(p);
             maxBatt = Math.max(maxBatt, batt);
@@ -171,6 +176,12 @@ final class Perf {
                     o.put("mLow1", Math.round(metrics.low1));
                 }
                 o.put("heavy", heavy);
+                o.put("game", game);
+                o.put("startTemp", startTemp);
+                o.put("endTemp", endTemp);
+                if (medPing > 0) { o.put("medPing", medPing); o.put("jitter", jitter); }
+                o.put("target", Boost.prefs(c).getString("target_fps", "60"));
+                o.put("profile", Boost.prefs(c).getString("profile", "custom"));
                 if (!fps.isEmpty()) {
                     List<Integer> s = new ArrayList<>(fps);
                     Collections.sort(s);
@@ -194,7 +205,14 @@ final class Perf {
                     o.put("avgPing", ps / ping.size());
                     o.put("maxPing", pmax);
                 }
-                Boost.prefs(c).edit().putString("last_report", o.toString()).apply();
+                // oturum geçmişi (son 20)
+                JSONArray hist;
+                try { hist = new JSONArray(Boost.prefs(c).getString("sessions", "[]")); } catch (Exception e) { hist = new JSONArray(); }
+                hist.put(o);
+                JSONArray keep = new JSONArray();
+                for (int i = Math.max(0, hist.length() - 20); i < hist.length(); i++) keep.put(hist.get(i));
+                Boost.prefs(c).edit().putString("last_report", o.toString()).putString("sessions", keep.toString())
+                        .putBoolean("report_unseen", true).apply();
             } catch (Exception ignored) {}
         }
     }

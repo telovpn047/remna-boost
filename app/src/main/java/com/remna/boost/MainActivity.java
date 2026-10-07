@@ -80,6 +80,15 @@ public class MainActivity extends Activity {
                 if (res == PackageManager.PERMISSION_GRANTED) { Tweaks.secureAllowed(this); toast(L.t("Shizuku bağlandı")); }
                 renderPerms();
                 renderSetup();
+        if (!BoostService.running && prefs.getBoolean("report_unseen", false)) {
+            prefs.edit().putBoolean("report_unseen", false).apply();
+            try {
+                org.json.JSONObject lr = new org.json.JSONObject(prefs.getString("last_report", "{}"));
+                org.json.JSONArray hs = new org.json.JSONArray(prefs.getString("sessions", "[]"));
+                org.json.JSONObject pv = hs.length() >= 2 ? hs.optJSONObject(hs.length() - 2) : null;
+                if (System.currentTimeMillis() - lr.optLong("at") - lr.optLong("dur") < 15 * 60_000) h.post(() -> openMatchReport(lr, pv));
+            } catch (Exception ignored) {}
+        }
             }));
         } catch (Throwable ignored) {}
         setContentView(build());
@@ -117,11 +126,27 @@ public class MainActivity extends Activity {
     protected void onPause() { super.onPause(); h.removeCallbacks(stats); }
 
     /* ---------------- arayüz ---------------- */
+    /**
+     * Tipografi: tek aile (sistem sans-serif), iki ağırlık (normal / medium), %92 ölçek. Rakamlar sabit genişlikte
+     * ("tnum") olduğu için değerler değişirken metin kaymaz. Uzun metinlerde satır aralığı biraz açılır.
+     */
+    static final float TYPE_SCALE = 0.92f;
+
     TextView text(String s, float sp, int color, boolean bold) {
         TextView t = new TextView(this);
-        t.setText(s); t.setTextSize(sp); t.setTextColor(color);
+        t.setText(s); t.setTextSize(sp * TYPE_SCALE); t.setTextColor(color);
         t.setTypeface(Typeface.create(bold ? "sans-serif-medium" : "sans-serif", Typeface.NORMAL));
+        t.setFontFeatureSettings("tnum");
+        t.setIncludeFontPadding(false);
+        if (!bold && sp <= 13) t.setLineSpacing(0, 1.18f);
         return t;
+    }
+
+    /** Sistem yazı boyutu çok büyükse uygulama içinde en fazla %115'e sınırla (kartlar taşmasın). */
+    @Override protected void attachBaseContext(Context base) {
+        android.content.res.Configuration c = new android.content.res.Configuration(base.getResources().getConfiguration());
+        if (c.fontScale > 1.15f) { c.fontScale = 1.15f; base = base.createConfigurationContext(c); }
+        super.attachBaseContext(base);
     }
 
     GradientDrawable round(int color, float r) {
@@ -145,9 +170,9 @@ public class MainActivity extends Activity {
     }
 
     TextView section(String s) {
-        TextView t = text(s, 12, TX3, true);
-        t.setLetterSpacing(0.08f);
-        t.setPadding(dp(4), dp(20), 0, dp(8));
+        TextView t = text(s, 11, TX3, true);
+        t.setLetterSpacing(0.1f);
+        t.setPadding(dp(4), dp(22), 0, dp(10));
         return t;
     }
 
@@ -196,7 +221,7 @@ public class MainActivity extends Activity {
         c.setGravity(Gravity.CENTER);
         c.setPadding(0, dp(14), 0, dp(12));
         c.setBackground(round(CARD, 18));
-        TextView v = text("—", 22, TX, true);
+        TextView v = text("—", 21, TX, true);
         c.addView(v);
         TextView l = text(label, 11, TX3, true);
         l.setLetterSpacing(0.1f);
@@ -481,7 +506,7 @@ public class MainActivity extends Activity {
         netNote.setPadding(dp(4), dp(4), dp(4), dp(8));
         root.addView(netNote);
         netLive = text("", 12, TX2, false);
-        netLive.setTypeface(Typeface.MONOSPACE);
+
         LinearLayout nl = card();
         nl.addView(netLive, new LinearLayout.LayoutParams(-1, -2));
         root.addView(nl);
@@ -510,6 +535,7 @@ public class MainActivity extends Activity {
         root.addView(perfBox);
         reportBox = new LinearLayout(this);
         reportBox.setOrientation(LinearLayout.VERTICAL);
+        root.addView(navCard(L.t("Oturum geçmişi"), L.t("Son 20 oturum · rapor · karşılaştırma · PNG paylaşımı"), v -> openSessions()), mlp(12));
         root.addView(section(L.t("SON OTURUM RAPORU")));
         root.addView(reportBox);
     }
@@ -522,9 +548,16 @@ public class MainActivity extends Activity {
             b.setPadding(dp(12), dp(10), dp(8), dp(10));
             b.setBackground(round(CARD, 14));
             TextView l = text(c[0], 10, TX3, true);
-            l.setLetterSpacing(0.08f);
+            l.setLetterSpacing(0.06f);
+            l.setSingleLine(true);
+            l.setEllipsize(android.text.TextUtils.TruncateAt.END);
             b.addView(l);
-            b.addView(text(c[1], 17, TX, true));
+            boolean na = c[1].equals(L.t("Yok")) || c[1].equals("—");
+            TextView val = text(c[1], na ? 13 : 16, na ? TX3 : TX, !na);
+            val.setPadding(0, dp(4), 0, 0);
+            val.setSingleLine(false);
+            val.setMaxLines(2);
+            b.addView(val);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
             lp.leftMargin = dp(3); lp.rightMargin = dp(3);
             row.addView(b, lp);
@@ -566,10 +599,10 @@ public class MainActivity extends Activity {
         PingStats ps = Live.pingStats();
         sb.append(title).append('\n');
         if (!ps.empty()) {
-            sb.append(String.format(java.util.Locale.US, "%-9s %d ms%n", L.t("Şu an"), Live.ping));
-            sb.append(String.format(java.util.Locale.US, "%-9s %d ms   %-7s %d ms%n", L.t("Ortanca"), ps.median(), L.t("En iyi"), ps.best()));
-            sb.append(String.format(java.util.Locale.US, "%-9s %d ms   %-7s %d ms%n", L.t("En kötü"), ps.worst(), L.t("Dalg."), ps.jitter()));
-            sb.append(String.format(java.util.Locale.US, "%-9s %%%.1f  (%d/%d)%n", L.t("ICMP kaybı"), Live.icmpSent == 0 ? 0f : Live.icmpLost * 100f / Live.icmpSent, Live.icmpLost, Live.icmpSent));
+            sb.append(L.t("Şu an")).append(' ').append(Live.ping).append(" ms  ·  ").append(L.t("Ortanca")).append(' ').append(ps.median()).append(" ms\n");
+            sb.append(L.t("En iyi")).append(' ').append(ps.best()).append("  ·  ").append(L.t("En kötü")).append(' ').append(ps.worst())
+                    .append("  ·  ").append(L.t("Dalg.")).append(' ').append(ps.jitter()).append(" ms\n");
+            sb.append(L.t("ICMP kaybı")).append(String.format(java.util.Locale.US, " %%%.1f (%d/%d)%n", Live.icmpSent == 0 ? 0f : Live.icmpLost * 100f / Live.icmpSent, Live.icmpLost, Live.icmpSent));
             sb.append(L.t("Ani yükselme: ")).append(Live.spikes).append(Live.lastSpike.isEmpty() ? "" : "  ·  " + Live.lastSpike).append('\n');
         }
         PingStats es = Live.estStats();
@@ -1215,6 +1248,17 @@ public class MainActivity extends Activity {
                 lp.topMargin = dp(10);
                 c.addView(gv, lp);
             }
+            TextView open = text(L.t("Raporu aç ›"), 13, TX, true);
+            open.setPadding(0, dp(10), 0, 0);
+            c.addView(open);
+            c.setOnClickListener(v -> {
+                org.json.JSONObject pv = null;
+                try {
+                    org.json.JSONArray hs = new org.json.JSONArray(prefs.getString("sessions", "[]"));
+                    if (hs.length() >= 2) pv = hs.optJSONObject(hs.length() - 2);
+                } catch (Exception ignored) {}
+                openMatchReport(o, pv);
+            });
             reportBox.addView(c, mlp(12));
         } catch (Exception ignored) {}
     }
@@ -1465,19 +1509,27 @@ public class MainActivity extends Activity {
                 else skipped.add(L.t("Dokunma hassasiyeti · ADB izni gerekli"));
             }
             if (!"off".equals(prefs.getString("ov_mode", "full")) && Settings.canDrawOverlays(this)) done.add(L.t("Oyun üstü panel"));
+            // SONRA: optimizasyondan sonra yeniden ölç (aynı yöntemle)
+            sleep(600);
+            long afterAvail = Boost.availRam(this);
+            float tempAfter = Boost.batteryTemp(this);
+            int pingAfter = -1;
+            for (String ip : Boost.dcFor(this, reg == null ? "Avrupa" : reg)) { pingAfter = Boost.icmp(ip); if (pingAfter > 0) break; }
+            final String cmp = beforeAfter(total, before, afterAvail, temp, tempAfter, ping, pingAfter);
+            prefs.edit().putString("last_boost_cmp", cmp).apply();
             final int fPing = ping;
             h.post(() -> {
                 big.setBusy(false);
                 big.success();
                 markSteps(99);
                 Haptics.success(this);
-                btnLabel.setTextSize(26);
+                btnLabel.setTextSize(26 * TYPE_SCALE);
                 btnLabel.setText("✓");
-                h.postDelayed(() -> { btnLabel.setTextSize(16); btnLabel.setText(L.t("OPTİMİZE")); }, 900);
+                h.postDelayed(() -> { btnLabel.setTextSize(16 * TYPE_SCALE); btnLabel.setText(L.t("OPTİMİZE")); }, 900);
                 h.postDelayed(() -> { if (stepsBox != null) stepsBox.setVisibility(View.GONE); }, 4000);
                 Intent sv = new Intent(this, BoostService.class).putExtra("game", game);
                 startForegroundService(sv);
-                showBoostResult(done, skipped, fPing, temp);
+                showBoostResult(done, skipped, fPing, temp, cmp);
             });
         }).start();
     }
@@ -1485,7 +1537,7 @@ public class MainActivity extends Activity {
     void step(String t) {
         final int n = stepNo++;
         h.post(() -> {
-            btnLabel.setTextSize(14);
+            btnLabel.setTextSize(14 * TYPE_SCALE);
             btnLabel.setText(t);
             markSteps(n);
         });
@@ -1507,12 +1559,27 @@ public class MainActivity extends Activity {
 
     static void sleep(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
 
-    void showBoostResult(java.util.List<String> done, java.util.List<String> skipped, int ping, float temp) {
-        btnLabel.setTextSize(26);
+    /** BOOST öncesi/sonrası: yalnız ölçülebilenler; küçük farklar "anlamlı değişiklik yok". */
+    String beforeAfter(long total, long availB, long availA, float tB, float tA, int pB, int pA) {
+        StringBuilder sb = new StringBuilder();
+        int prB = (int) (100 - availB * 100 / Math.max(1, total)), prA = (int) (100 - availA * 100 / Math.max(1, total));
+        sb.append(L.t("RAM baskısı")).append("  %").append(prB).append(" → %").append(prA)
+                .append(Math.abs(prA - prB) < 2 ? "  · " + L.t("anlamlı değişiklik yok") : "  (" + (prA - prB > 0 ? "+" : "") + (prA - prB) + ")").append('\n');
+        sb.append(L.t("Sıcaklık")).append(String.format(java.util.Locale.US, "  %.0f → %.0f°C", tB, tA))
+                .append(Math.abs(tA - tB) < 1 ? "  · " + L.t("anlamlı değişiklik yok") : "").append('\n');
+        if (pB > 0 && pA > 0) sb.append(L.t("Ping")).append("  ").append(pB).append(" → ").append(pA).append(" ms")
+                .append(Math.abs(pA - pB) < Math.max(5, pB / 10) ? "  · " + L.t("anlamlı değişiklik yok") : "").append('\n');
+        sb.append(L.t("FPS oyun başlamadan ölçülemez; maç raporunda önceki oturumla karşılaştırılır."));
+        return sb.toString();
+    }
+
+    void showBoostResult(java.util.List<String> done, java.util.List<String> skipped, int ping, float temp, String cmp) {
+        btnLabel.setTextSize(26 * TYPE_SCALE);
         StringBuilder sb = new StringBuilder();
         sb.append(gameName.getText()).append("\n\n");
         sb.append(String.format(java.util.Locale.US, L.t("RAM  %s boş   ·   PING  %s   ·   SICAKLIK  %.0f°C%n%n"),
                 Boost.fmtGb(Boost.availRam(this)), ping > 0 ? ping + " ms" : "—", temp));
+        sb.append(L.t("ÖNCE → SONRA")).append('\n').append(cmp).append("\n\n");
         sb.append(L.t("Uygulananlar:\n"));
         for (String d : done) sb.append("✓ ").append(d).append('\n');
         if (!skipped.isEmpty()) {
@@ -1540,10 +1607,179 @@ public class MainActivity extends Activity {
                 final int fp = BoostService.running ? Integer.MIN_VALUE : p;
                 h.post(() -> { if (fpsBig != null) renderHome(fp); if (tab == 2) renderPerf(); if (tab == 1) renderNetLive(); });
             }).start();
-            if (!big.busy) { btnLabel.setTextSize(26); btnLabel.setText(BoostService.running ? L.t("OYUNDA") : "BOOST"); }
+            if (!big.busy) { btnLabel.setTextSize(26 * TYPE_SCALE); btnLabel.setText(BoostService.running ? L.t("OYUNDA") : "BOOST"); }
             h.postDelayed(this, 3000);
         }
     };
+
+    /* ---------------- maç raporu ---------------- */
+    static int oi(org.json.JSONObject o, String k) { return o == null ? -1 : o.optInt(k, -1); }
+
+    static int avgOf(org.json.JSONObject o) { int m = oi(o, "mAvg"); return m > 0 ? m : oi(o, "avgFps"); }
+
+    /** Önceki oturuma göre fark satırı: ▲/▼ ve yüzde; %3'ten küçükse "≈". */
+    String delta(String label, int now, int prev, boolean higherBetter, String unit) {
+        if (now <= 0 || prev <= 0) return null;
+        double pct = (now - prev) * 100.0 / prev;
+        String sym = Math.abs(pct) < 3 ? "≈" : (pct > 0) == higherBetter ? "▲" : "▼";
+        return String.format(java.util.Locale.US, "%s %s  %d%s (%s %d%s, %+.1f%%)", sym, label, now, unit, L.t("önceki"), prev, unit, pct);
+    }
+
+    void openMatchReport(org.json.JSONObject o, org.json.JSONObject prev) {
+        sheet(L.t("MAÇ RAPORU"), b -> {
+            String date = new java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.US).format(new java.util.Date(o.optLong("at")));
+            long min = o.optLong("dur") / 60000;
+            b.addView(text(o.optString("game", "PUBG Mobile"), 18, TX, true));
+            b.addView(text(date + "  ·  " + min + L.t(" dk") + "  ·  " + nameOf(o.optString("profile", "custom")) + "  ·  " + L.t("hedef ") + o.optString("target", "60") + " FPS", 12, TX2, false));
+            TextView ex = text(o.optBoolean("exact") ? "✓ " + L.t("Kesin · kare zaman damgalarından") : "! " + L.t("Yaklaşık · saniyelik FPS"), 11, o.optBoolean("exact") ? GREEN : TX3, false);
+            ex.setPadding(0, dp(4), 0, dp(8));
+            b.addView(ex);
+            b.addView(section("FPS"));
+            b.addView(statGrid(new String[][]{
+                    {L.t("ORT"), avgOf(o) > 0 ? String.valueOf(avgOf(o)) : "—"},
+                    {L.t("%1 DÜŞÜK"), oi(o, "mLow1") > 0 ? String.valueOf(oi(o, "mLow1")) : "—"},
+                    {L.t("%0.1 DÜŞÜK"), oi(o, "low01") > 0 ? String.valueOf(oi(o, "low01")) : "—"},
+                    {"P99", o.optDouble("p99", -1) > 0 ? String.format(java.util.Locale.US, "%.1f ms", o.optDouble("p99")) : "—"}}));
+            b.addView(statGrid(new String[][]{
+                    {L.t("KARE STAB."), oi(o, "fstab") >= 0 ? "%" + oi(o, "fstab") : "—"},
+                    {L.t("TAKILMA"), oi(o, "stutter") >= 0 ? String.valueOf(oi(o, "stutter")) : "—"},
+                    {L.t("AĞIR KARE"), oi(o, "heavy") >= 0 ? String.valueOf(oi(o, "heavy")) : "—"}}), mlp(6));
+            b.addView(section(L.t("AĞ")));
+            b.addView(statGrid(new String[][]{
+                    {L.t("ORTANCA"), oi(o, "medPing") > 0 ? oi(o, "medPing") + " ms" : oi(o, "avgPing") > 0 ? oi(o, "avgPing") + " ms" : "—"},
+                    {L.t("DALG."), oi(o, "jitter") >= 0 ? oi(o, "jitter") + " ms" : "—"},
+                    {L.t("KAYIP"), o.has("loss") ? String.format(java.util.Locale.US, "%%%.1f", o.optDouble("loss")) : "—"},
+                    {L.t("ANİ YÜKS."), oi(o, "spikes") >= 0 ? String.valueOf(oi(o, "spikes")) : "—"}}));
+            b.addView(section(L.t("SICAKLIK")));
+            b.addView(statGrid(new String[][]{
+                    {L.t("BAŞLANGIÇ"), o.optDouble("startTemp", -1) > 0 ? Math.round(o.optDouble("startTemp")) + "°C" : "—"},
+                    {L.t("TEPE"), Math.round(o.optDouble("maxBatt", 0)) + "°C"},
+                    {L.t("BİTİŞ"), o.optDouble("endTemp", -1) > 0 ? Math.round(o.optDouble("endTemp")) + "°C" : "—"},
+                    {Perf.cpuLabel.toUpperCase(), o.optDouble("maxCpu", 0) > 0 ? Math.round(o.optDouble("maxCpu")) + "°C" : "—"}}));
+            org.json.JSONArray g = o.optJSONArray("graph");
+            if (g != null && g.length() > 1) {
+                int[] v = new int[g.length()];
+                for (int i = 0; i < v.length; i++) v[i] = g.optInt(i);
+                b.addView(graphCard("FPS", v, GREEN, ""), mlp(10));
+            }
+            if (prev != null) {
+                b.addView(section(L.t("ÖNCEKİ OTURUMLA KARŞILAŞTIRMA")));
+                StringBuilder c = new StringBuilder();
+                String[] lines = {
+                        delta(L.t("Ortalama FPS"), avgOf(o), avgOf(prev), true, ""),
+                        delta(L.t("%1 düşük"), oi(o, "mLow1"), oi(prev, "mLow1"), true, ""),
+                        delta(L.t("Ortanca ping"), oi(o, "medPing"), oi(prev, "medPing"), false, " ms"),
+                        delta(L.t("Tepe sıcaklık"), (int) Math.round(o.optDouble("maxBatt", 0)), (int) Math.round(prev.optDouble("maxBatt", 0)), false, "°C")};
+                for (String l : lines) if (l != null) c.append(l).append('\n');
+                TextView ct = text(c.length() == 0 ? L.t("Karşılaştırılabilir veri yok.") : c.toString().trim(), 12, TX, false);
+                ct.setTypeface(Typeface.MONOSPACE);
+                LinearLayout cc = card();
+                cc.addView(ct, new LinearLayout.LayoutParams(-1, -2));
+                b.addView(cc);
+                TextView cn = text(L.t("▲ iyileşme · ▼ kötüleşme · ≈ %3'ten küçük fark (anlamlı değil)"), 10, TX3, false);
+                cn.setPadding(dp(4), dp(4), 0, 0);
+                b.addView(cn);
+            }
+            org.json.JSONArray ev = o.optJSONArray("events");
+            if (ev != null && ev.length() > 0) {
+                b.addView(section(L.t("OLAYLAR") + " (" + o.optInt("eventCount", ev.length()) + ")"));
+                for (int i = 0; i < ev.length(); i++) {
+                    TextView et = text("• " + ev.optString(i), 12, TX2, false);
+                    et.setPadding(dp(4), dp(2), dp(4), dp(2));
+                    b.addView(et);
+                }
+            }
+            TextView sh = text(L.t("PAYLAŞ (PNG)"), 14, Color.WHITE, true);
+            sh.setGravity(Gravity.CENTER);
+            sh.setPadding(0, dp(14), 0, dp(14));
+            sh.setBackground(round(OR, 14));
+            sh.setOnClickListener(v -> shareReport(o));
+            b.addView(sh, mlp(16));
+        });
+    }
+
+    void openSessions() {
+        org.json.JSONArray hist;
+        try { hist = new org.json.JSONArray(prefs.getString("sessions", "[]")); } catch (Exception e) { hist = new org.json.JSONArray(); }
+        final org.json.JSONArray hs = hist;
+        sheet(L.t("OTURUM GEÇMİŞİ"), b -> {
+            if (hs.length() == 0) {
+                b.addView(text(L.t("Henüz kayıtlı oturum yok. 1 dakikadan uzun her oyun oturumu burada listelenir."), 12, TX2, false));
+                return;
+            }
+            for (int i = hs.length() - 1; i >= 0; i--) {
+                org.json.JSONObject o = hs.optJSONObject(i);
+                if (o == null) continue;
+                org.json.JSONObject prev = i > 0 ? hs.optJSONObject(i - 1) : null;
+                String date = new java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(new java.util.Date(o.optLong("at")));
+                int fps = avgOf(o), pg = oi(o, "medPing") > 0 ? oi(o, "medPing") : oi(o, "avgPing");
+                String sub = (fps > 0 ? fps + " FPS" : "— FPS") + "  ·  " + (pg > 0 ? pg + " ms" : "— ms") + "  ·  " + Math.round(o.optDouble("maxBatt", 0)) + "°C  ·  " + o.optLong("dur") / 60000 + L.t(" dk");
+                b.addView(navCard(date + "  ·  " + o.optString("game", "PUBG"), sub, v -> openMatchReport(o, prev)), mlp(i == hs.length() - 1 ? 0 : 8));
+            }
+        });
+    }
+
+    /** Raporu paylaşılabilir PNG kartına çizer, Resimler/RemnaBoost'a kaydeder ve paylaşım penceresini açar. */
+    void shareReport(org.json.JSONObject o) {
+        if (Build.VERSION.SDK_INT < 29) { toast(L.t("PNG paylaşımı Android 10 ve üstünde çalışır")); return; }
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(dp(24), dp(24), dp(24), dp(20));
+        c.setBackgroundColor(BG);
+        TextView brand = text("REMNA BOOST", 14, OR, true);
+        brand.setLetterSpacing(0.15f);
+        c.addView(brand);
+        c.addView(text(o.optString("game", "PUBG Mobile").toUpperCase(), 22, TX, true));
+        c.addView(text(new java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.US).format(new java.util.Date(o.optLong("at")))
+                + "  ·  " + o.optLong("dur") / 60000 + L.t(" dk"), 12, TX2, false));
+        String[][] rows = {
+                {avgOf(o) > 0 ? String.valueOf(avgOf(o)) : "—", "FPS"},
+                {oi(o, "mLow1") > 0 ? String.valueOf(oi(o, "mLow1")) : "—", L.t("%1 DÜŞÜK")},
+                {oi(o, "medPing") > 0 ? oi(o, "medPing") + " ms" : oi(o, "avgPing") > 0 ? oi(o, "avgPing") + " ms" : "—", "PING"},
+                {o.has("loss") ? String.format(java.util.Locale.US, "%%%.1f", o.optDouble("loss")) : "—", L.t("KAYIP")},
+                {Math.round(o.optDouble("maxBatt", 0)) + "°C", L.t("TEPE SICAKLIK")},
+                {oi(o, "fstab") >= 0 ? "%" + oi(o, "fstab") : "—", L.t("KARARLILIK")}};
+        for (int i = 0; i < rows.length; i += 2) {
+            LinearLayout r = new LinearLayout(this);
+            for (int k = i; k < i + 2; k++) {
+                LinearLayout cell = new LinearLayout(this);
+                cell.setOrientation(LinearLayout.VERTICAL);
+                cell.setPadding(dp(14), dp(12), dp(10), dp(12));
+                cell.setBackground(round(CARD, 16));
+                cell.addView(text(rows[k][0], 26, TX, true));
+                TextView lb = text(rows[k][1], 11, TX3, true);
+                lb.setLetterSpacing(0.08f);
+                cell.addView(lb);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+                lp.leftMargin = dp(4); lp.rightMargin = dp(4);
+                r.addView(cell, lp);
+            }
+            c.addView(r, mlp(i == 0 ? 16 : 8));
+        }
+        TextView ft = text(o.optBoolean("exact") ? L.t("Kesin ölçüm · kare zaman damgaları") : L.t("Yaklaşık ölçüm"), 10, TX3, false);
+        ft.setPadding(dp(4), dp(14), 0, 0);
+        c.addView(ft);
+        int w = dp(360);
+        c.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        c.layout(0, 0, w, c.getMeasuredHeight());
+        android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(w, c.getMeasuredHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+        c.draw(new Canvas(bmp));
+        try {
+            android.content.ContentValues cv = new android.content.ContentValues();
+            cv.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "remna-boost-" + o.optLong("at") + ".png");
+            cv.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+            cv.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/RemnaBoost");
+            android.net.Uri uri = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+            if (uri == null) throw new java.io.IOException("insert");
+            try (java.io.OutputStream os = getContentResolver().openOutputStream(uri)) { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, os); }
+            Intent send = new Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(send, L.t("Raporu paylaş")));
+        } catch (Exception e) {
+            toast(L.t("Rapor kaydedilemedi: ") + e.getClass().getSimpleName());
+        } finally {
+            bmp.recycle();
+        }
+    }
 
     /* ---------------- DNS testi ---------------- */
     java.util.List<DnsLab.Result> dnsResults;

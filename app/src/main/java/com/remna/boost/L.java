@@ -17,6 +17,47 @@ final class L {
     private static void put(String tr, String en, String ru, String tk) { M.put(tr, new String[]{en, ru, tk}); }
 
     static {
+        put("RAM baskısı", "RAM pressure", "Нагрузка RAM", "RAM basyşy");
+        put("anlamlı değişiklik yok", "no significant change", "без заметных изменений", "ähmiýetli üýtgeşme ýok");
+        put("Sıcaklık", "Temperature", "Температура", "Gyzgynlyk");
+        put("Ping", "Ping", "Пинг", "Ping");
+        put("FPS oyun başlamadan ölçülemez; maç raporunda önceki oturumla karşılaştırılır.", "FPS can't be measured before the game starts; the match report compares it with the previous session.", "FPS нельзя измерить до запуска игры; отчёт о матче сравнивает его с прошлой сессией.", "FPS oýun başlamanka ölçülmeýär; oýun hasabaty ony öňki sessiýa bilen deňeşdirýär.");
+        put("ÖNCE → SONRA", "BEFORE → AFTER", "ДО → ПОСЛЕ", "ÖŇ → SOŇ");
+        put("önceki", "previous", "ранее", "öňki");
+        put("MAÇ RAPORU", "MATCH REPORT", "ОТЧЁТ О МАТЧЕ", "OÝUN HASABATY");
+        put(" dk", " min", " мин", " min");
+        put("hedef ", "target ", "цель ", "maksat ");
+        put("Kesin · kare zaman damgalarından", "Exact · from frame timestamps", "Точно · по меткам кадров", "Takyk · kadr wagt belliklerinden");
+        put("Yaklaşık · saniyelik FPS", "Approximate · per-second FPS", "Приблизительно · посекундный FPS", "Takmynan · sekuntlyk FPS");
+        put("TAKILMA", "STUTTERS", "ПОДТОРМ.", "SÄGINME");
+        put("AĞIR KARE", "HEAVY FRAMES", "ТЯЖ. КАДРЫ", "AGYR KADR");
+        put("ORTANCA", "MEDIAN", "МЕДИАНА", "MEDIANA");
+        put("DALG.", "JITTER", "ДЖИТТЕР", "YRGYLDY");
+        put("KAYIP", "LOSS", "ПОТЕРИ", "ÝITGI");
+        put("ANİ YÜKS.", "SPIKES", "СКАЧКИ", "BÖKÜŞ");
+        put("BAŞLANGIÇ", "START", "НАЧАЛО", "BAŞY");
+        put("TEPE", "PEAK", "ПИК", "IŇ ÝOKARY");
+        put("BİTİŞ", "END", "КОНЕЦ", "SOŇY");
+        put("ÖNCEKİ OTURUMLA KARŞILAŞTIRMA", "COMPARED WITH PREVIOUS SESSION", "СРАВНЕНИЕ С ПРОШЛОЙ СЕССИЕЙ", "ÖŇKI SESSIÝA BILEN DEŇEŞDIRME");
+        put("Ortalama FPS", "Average FPS", "Средний FPS", "Ortaça FPS");
+        put("%1 düşük", "1% low", "1% low", "1% pes");
+        put("Ortanca ping", "Median ping", "Медианный пинг", "Mediana ping");
+        put("Tepe sıcaklık", "Peak temperature", "Пиковая температура", "Iň ýokary gyzgynlyk");
+        put("Karşılaştırılabilir veri yok.", "No comparable data.", "Нет данных для сравнения.", "Deňeşdirer ýaly maglumat ýok.");
+        put("▲ iyileşme · ▼ kötüleşme · ≈ %3'ten küçük fark (anlamlı değil)", "▲ better · ▼ worse · ≈ under 3% (not significant)", "▲ лучше · ▼ хуже · ≈ менее 3% (незначимо)", "▲ gowulaşma · ▼ erbetleşme · ≈ 3%-den az (ähmiýetsiz)");
+        put("PAYLAŞ (PNG)", "SHARE (PNG)", "ПОДЕЛИТЬСЯ (PNG)", "PAÝLAŞ (PNG)");
+        put("OTURUM GEÇMİŞİ", "SESSION HISTORY", "ИСТОРИЯ СЕССИЙ", "SESSIÝA TARYHY");
+        put("Henüz kayıtlı oturum yok. 1 dakikadan uzun her oyun oturumu burada listelenir.", "No sessions yet. Every game session longer than 1 minute is listed here.", "Сессий пока нет. Здесь будет каждая сессия длиннее 1 минуты.", "Entek sessiýa ýok. 1 minutdan uzyn her oýun sessiýasy şu ýerde görüner.");
+        put("PNG paylaşımı Android 10 ve üstünde çalışır", "PNG sharing needs Android 10 or later", "Обмен PNG работает с Android 10", "PNG paýlaşmak Android 10 we ondan ýokarda işleýär");
+        put("TEPE SICAKLIK", "PEAK TEMP", "ПИК ТЕМП.", "IŇ ÝOKARY GYZGYNLYK");
+        put("KARARLILIK", "STABILITY", "СТАБИЛЬНОСТЬ", "DURNUKLYLYK");
+        put("Kesin ölçüm · kare zaman damgaları", "Exact measurement · frame timestamps", "Точное измерение · метки кадров", "Takyk ölçeg · kadr wagt bellikleri");
+        put("Yaklaşık ölçüm", "Approximate measurement", "Приблизительное измерение", "Takmynan ölçeg");
+        put("Raporu paylaş", "Share report", "Поделиться отчётом", "Hasabaty paýlaş");
+        put("Rapor kaydedilemedi: ", "Couldn't save report: ", "Не удалось сохранить отчёт: ", "Hasabat saklanmady: ");
+        put("Oturum geçmişi", "Session history", "История сессий", "Sessiýa taryhy");
+        put("Son 20 oturum · rapor · karşılaştırma · PNG paylaşımı", "Last 20 sessions · report · comparison · PNG share", "Последние 20 сессий · отчёт · сравнение · PNG", "Soňky 20 sessiýa · hasabat · deňeşdirme · PNG");
+        put("Raporu aç ›", "Open report ›", "Открыть отчёт ›", "Hasabaty aç ›");
         put("CİHAZ", "DEVICE", "УСТРОЙСТВО", "ENJAM");
         put("BELLEK", "MEMORY", "ПАМЯТЬ", "ÝAT");
         put("TERMAL", "THERMAL", "ТЕМП.", "TERMAL");
