@@ -33,7 +33,7 @@ public class BoostService extends Service {
     final Handler h = new Handler(Looper.getMainLooper());
     WindowManager wm;
     LinearLayout panel;
-    TextView pingTv, ramTv, tempTv, fpsTv, jitTv, lossTv, cpuTv, ftTv;
+    TextView pingTv, ramTv, tempTv, fpsTv, jitTv, lossTv, cpuTv, ftTv, gpuTv;
     volatile int lastFps = -1;
     String game;
     long notForegroundSince = 0;
@@ -85,6 +85,7 @@ public class BoostService extends Service {
         Sh.layer = null;
         session = new Perf.Session();
         Live.reset();
+        Diagnose.reset();
         Live.targetFps = Integer.parseInt(Boost.prefs(this).getString("target_fps", "60"));
         Sh.drainFrames();
         new Thread(() -> {
@@ -96,6 +97,7 @@ public class BoostService extends Service {
                 Live.fps = lastFps;
                 Live.cpu = lastCpu;
                 Live.frame(Sh.ftValid && lastFps > 0, Sh.ftAvg, Sh.ftMax, Sh.stutters, Sh.heavy);
+                if (Live.inGame) Live.tele = Telemetry.sample();
                 float[] nf = Sh.drainFrames();
                 if (Live.inGame && nf.length > 0) Live.addFrames(nf);
                 try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
@@ -178,7 +180,7 @@ public class BoostService extends Service {
             if (session != null && inGame) session.add(lastFps, lastPing, bt, lastCpu);
             Live.batt = bt;
             Live.inGame = inGame;
-            if (inGame) Live.sample(lastFps, lastPing, bt);
+            if (inGame) { Live.sample(lastFps, lastPing, bt); Diagnose.tick(BoostService.this, lastFps, bt); }
             // termal yönetici: ısınınca kademeli düşür (WARM 90 Hz, HOT/PROTECT 60 Hz), soğuyunca bekleyip yükselt
             Thermal.State ns = thermal.update(BoostService.this, bt);
             if (ns != null) {
@@ -252,6 +254,9 @@ public class BoostService extends Service {
         float cpu = lastCpu;
         cpuTv.setText(cpu > 0 ? String.format(java.util.Locale.US, "%s %.0f°", Perf.cpuLabel, cpu) : "");
         cpuTv.setTextColor(cpu < 60 ? C_DIM : cpu < 75 ? C_WARN : C_BAD);
+        Telemetry tl = Live.tele;
+        gpuTv.setText(tl == null || tl.gpuLoad < 0 ? "" : "GPU %" + tl.gpuLoad);
+        gpuTv.setTextColor(tl == null || tl.gpuLoad < 90 ? C_DIM : C_WARN);
         float t = Boost.batteryTemp(this);
         String chg = Perf.chargeState(this);
         tempTv.setText(String.format(java.util.Locale.US, L.t("Pil %.0f°"), t) + (chg.isEmpty() ? "" : " " + chg));
@@ -281,7 +286,7 @@ public class BoostService extends Service {
         g.setStroke(dp(1), 0x1FFFFFFF);
         panel.setBackground(g);
         pingTv = chip("…"); ramTv = chip("…"); tempTv = chip("…"); fpsTv = chip("");
-        jitTv = chip(""); lossTv = chip(""); cpuTv = chip(""); ftTv = chip("");
+        jitTv = chip(""); lossTv = chip(""); cpuTv = chip(""); ftTv = chip(""); gpuTv = chip("");
         boolean fpsOk = Sh.granted() && Boost.prefs(this).getBoolean("fps", true);
         switch (ovMode()) {
             case "minimal": // 60 FPS • 32 ms
@@ -293,11 +298,11 @@ public class BoostService extends Service {
                 break;
             case "performance": // FPS · RAM · CPU · pil
                 if (fpsOk) panel.addView(fpsTv);
-                panel.addView(ramTv); panel.addView(cpuTv); panel.addView(tempTv);
+                panel.addView(gpuTv); panel.addView(ramTv); panel.addView(cpuTv); panel.addView(tempTv);
                 break;
             default: // full
                 if (fpsOk) { panel.addView(fpsTv); panel.addView(ftTv); }
-                panel.addView(pingTv); panel.addView(ramTv); panel.addView(cpuTv); panel.addView(tempTv);
+                panel.addView(pingTv); panel.addView(gpuTv); panel.addView(ramTv); panel.addView(cpuTv); panel.addView(tempTv);
         }
         final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -328,6 +333,7 @@ public class BoostService extends Service {
             session.metrics = Live.metrics();
             session.icmpLoss = Live.icmpSent == 0 ? -1 : Live.icmpLost * 100f / Live.icmpSent;
             session.spikes = Live.spikes;
+            session.events = Diagnose.snapshot();
             session.heavy = Live.heavyTotal;
             session.save(this);
         }

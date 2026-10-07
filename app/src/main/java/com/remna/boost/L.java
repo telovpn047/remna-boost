@@ -17,6 +17,31 @@ final class L {
     private static void put(String tr, String en, String ru, String tk) { M.put(tr, new String[]{en, ru, tk}); }
 
     static {
+        put("küçük", "little", "малые", "kiçi");
+        put("orta", "mid", "средние", "orta");
+        put("büyük", "big", "большие", "uly");
+        put("GPU darboğazı", "GPU bottleneck", "Узкое место: GPU", "GPU päsgelçiligi");
+        put("CPU darboğazı", "CPU bottleneck", "Узкое место: CPU", "CPU päsgelçiligi");
+        put("Termal darboğaz", "Thermal bottleneck", "Тепловое ограничение", "Termal päsgelçilik");
+        put("Grafik kalitesini ya da çözünürlüğü düşür.", "Lower graphics quality or resolution.", "Снизьте качество графики или разрешение.", "Grafika hilini ýa-da çözgüdi peselt.");
+        put("CPU yükü yüksek: FPS hedefini düşür ya da arka plan uygulamalarını kapat.", "High CPU load: lower the FPS target or close background apps.", "Высокая нагрузка CPU: снизьте целевой FPS или закройте фоновые приложения.", "CPU ýüki ýokary: FPS maksadyny peselt ýa-da fon programmalaryny ýap.");
+        put("Cihaz ısınıyor: Serin profili seç ya da cihazı soğut.", "Device is heating: choose the Cool profile or cool the device.", "Устройство нагревается: выберите «Охлаждение» или остудите устройство.", "Enjam gyzýar: Salkyn profilini saýla ýa-da enjamy sowat.");
+        put("Belirgin bir donanım nedeni yok; oyundaki sahne yükünden olabilir.", "No clear hardware cause; may be in-game scene load.", "Явной аппаратной причины нет; возможно, нагрузка сцены в игре.", "Aýdyň enjam sebäbi ýok; oýundaky sahna ýükünden bolup biler.");
+        put("FPS DÜŞÜŞÜ", "FPS DROP", "ПАДЕНИЕ FPS", "FPS PESELMESI");
+        put("cihaz kısılma bildiriyor", "device reports throttling", "устройство сообщает о троттлинге", "enjam çäklenmäni habar berýär");
+        put("TERMAL KISILMA TESPİT EDİLDİ", "THERMAL THROTTLING DETECTED", "ОБНАРУЖЕН ТЕПЛОВОЙ ТРОТТЛИНГ", "TERMAL ÇÄKLENME ÝÜZE ÇYKDY");
+        put("ANİ PİNG YÜKSELMESİ", "PING SPIKE", "СКАЧОК ПИНГА", "PING BÖKÜŞI");
+        put("Wi-Fi sinyalini ya da ağdaki diğer indirmeleri kontrol et.", "Check Wi-Fi signal or other downloads on the network.", "Проверьте сигнал Wi-Fi или другие загрузки в сети.", "Wi-Fi signalyny ýa-da tordaky beýleki ýüklemeleri barla.");
+        put("GPU FREK.", "GPU FREQ.", "ЧАСТ. GPU", "GPU ÝYGY.");
+        put("Telemetri ve darboğaz analizi oyun sırasında çalışır (Shizuku gerekir).", "Telemetry and bottleneck analysis run during games (needs Shizuku).", "Телеметрия и анализ узких мест работают во время игры (нужен Shizuku).", "Telemetriýa we päsgelçilik seljermesi oýun wagtynda işleýär (Shizuku gerek).");
+        put("CPU/GPU telemetrisi bu cihazda okunamıyor; darboğaz analizi yapılamaz.", "CPU/GPU telemetry can't be read on this device; bottleneck analysis unavailable.", "Телеметрия CPU/GPU недоступна на этом устройстве; анализ невозможен.", "Bu enjamda CPU/GPU telemetriýasy okalmaýar; päsgelçilik seljermesi mümkin däl.");
+        put("Belirgin darboğaz yok", "No clear bottleneck", "Явного узкого места нет", "Aýdyň päsgelçilik ýok");
+        put("ZAMAN ÇİZELGESİ", "TIMELINE", "ХРОНОЛОГИЯ", "WAGT ÇYZGYSY");
+        put("olay", "event", "событие", "waka");
+        put("Her çizgi kendi aralığında ölçeklenir; düşüşlerin ne zaman ve neyle birlikte olduğuna bakmak içindir.", "Each line is scaled to its own range; it shows when drops happened and what changed with them.", "Каждая линия в своём масштабе; видно, когда и вместе с чем случились просадки.", "Her çyzyk öz aralygynda ölçeglenýär; peselmeleriň haçan we näme bilen bolandygyny görmek üçin.");
+        put("OLAYLAR", "EVENTS", "СОБЫТИЯ", "WAKALAR");
+        put("Bu oturumda FPS düşüşü, termal kısılma ya da ani ping yükselmesi tespit edilmedi.", "No FPS drops, thermal throttling or ping spikes detected this session.", "В этой сессии не было падений FPS, троттлинга и скачков пинга.", "Bu sessiýada FPS peselmesi, termal çäklenme ýa-da ping böküşi ýüze çykmady.");
+        put("Öneri: ", "Tip: ", "Совет: ", "Maslahat: ");
         put("%0.1 DÜŞÜK", "0.1% LOW", "0.1% LOW", "0.1% PES");
         put("KARE ORT", "FRAME AVG", "КАДР СРЕД", "KADR ORT");
         put("DÜŞEN", "DROPPED", "ПРОПУЩ.", "DÜŞEN");

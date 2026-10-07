@@ -601,7 +601,79 @@ public class MainActivity extends Activity {
             tn.setPadding(dp(4), dp(6), 0, 0);
             perfBox.addView(tn);
         }
-        int[] fps = Live.fpsSeries(), pg = Live.pingSeries(), tp = Live.tempSeries();
+        // ---- V2.2: telemetri, darboğaz, olaylar, ortak zaman çizelgesi ----
+        Telemetry tl = live ? Live.tele : null;
+        perfBox.addView(section("CPU · GPU"));
+        perfBox.addView(statGrid(new String[][]{
+                {"GPU", tl == null || tl.gpuLoad < 0 ? L.t("Yok") : "%" + tl.gpuLoad},
+                {L.t("GPU FREK."), tl == null || tl.gpuMhz < 0 ? L.t("Yok") : tl.gpuMhz + (tl.gpuMaxMhz > 0 ? "/" + tl.gpuMaxMhz : "") + " MHz"},
+                {"CPU", tl == null || tl.cpuUsage < 0 ? L.t("Yok") : "%" + tl.cpuUsage}}));
+        if (tl != null && !tl.clusters.isEmpty()) {
+            String[][] cl = new String[Math.min(4, tl.clusters.size())][];
+            for (int i = 0; i < cl.length; i++) {
+                int[] c = tl.clusters.get(i);
+                cl[i] = new String[]{tl.clusterName(i).toUpperCase(), c[0] + "/" + c[1] + " MHz"};
+            }
+            perfBox.addView(statGrid(cl), mlp(6));
+        }
+        String bn = live ? Diagnose.current(this) : null;
+        TextView bnt = text(!live ? L.t("Telemetri ve darboğaz analizi oyun sırasında çalışır (Shizuku gerekir).")
+                : tl == null || (tl.gpuLoad < 0 && tl.cpuUsage < 0) ? L.t("CPU/GPU telemetrisi bu cihazda okunamıyor; darboğaz analizi yapılamaz.")
+                : bn == null ? "✓ " + L.t("Belirgin darboğaz yok")
+                : "⚠ " + Diagnose.bottleneckText(bn) + " — " + Diagnose.recFor(bn), 12, bn == null ? TX2 : YEL, bn != null);
+        bnt.setPadding(dp(4), dp(8), dp(4), 0);
+        perfBox.addView(bnt);
+
+        int[] fps = Live.fpsSeries(), pg = Live.pingSeries(), tp = Live.tempSeries(), gp = Live.gpuSeries();
+        if (fps.length > 1) {
+            perfBox.addView(section(L.t("ZAMAN ÇİZELGESİ")));
+            LinearLayout tc = card();
+            tc.setOrientation(LinearLayout.VERTICAL);
+            tc.setGravity(Gravity.START);
+            Timeline tlv = new Timeline(this);
+            boolean anyGpu = false;
+            for (int x : gp) if (x >= 0) { anyGpu = true; break; }
+            tlv.series = anyGpu ? new int[][]{fps, pg, tp, gp} : new int[][]{fps, pg, tp};
+            tlv.colors = anyGpu ? new int[]{GREEN, 0xFF6EA8FE, YEL, 0xFFB58CFF} : new int[]{GREEN, 0xFF6EA8FE, YEL};
+            java.util.List<Diagnose.Ev> evs = Diagnose.snapshot();
+            int first = Live.firstIndex();
+            java.util.List<Integer> mk = new java.util.ArrayList<>(), mc = new java.util.ArrayList<>();
+            for (Diagnose.Ev e : evs) {
+                int pos = e.idx - first;
+                if (pos >= 0 && pos < fps.length) { mk.add(pos); mc.add("THERMAL".equals(e.type) ? RED : "PING".equals(e.type) ? 0xFF6EA8FE : YEL); }
+            }
+            tlv.marks = new int[mk.size()];
+            tlv.markColors = new int[mk.size()];
+            for (int i = 0; i < mk.size(); i++) { tlv.marks[i] = mk.get(i); tlv.markColors[i] = mc.get(i); }
+            tc.addView(tlv, new LinearLayout.LayoutParams(-1, dp(120)));
+            TextView lg = text("● FPS   ● " + L.t("PING") + "   ● " + L.t("SICAKLIK") + (anyGpu ? "   ● GPU" : "") + "   ┆ " + L.t("olay"), 11, TX3, false);
+            lg.setPadding(0, dp(8), 0, 0);
+            tc.addView(lg);
+            perfBox.addView(tc);
+            TextView sc = text(L.t("Her çizgi kendi aralığında ölçeklenir; düşüşlerin ne zaman ve neyle birlikte olduğuna bakmak içindir."), 10, TX3, false);
+            sc.setPadding(dp(4), dp(4), 0, 0);
+            perfBox.addView(sc);
+
+            java.util.List<Diagnose.Ev> all = Diagnose.snapshot();
+            perfBox.addView(section(L.t("OLAYLAR") + " (" + all.size() + ")"));
+            if (all.isEmpty()) {
+                TextView ne = text("✓ " + L.t("Bu oturumda FPS düşüşü, termal kısılma ya da ani ping yükselmesi tespit edilmedi."), 12, TX2, false);
+                ne.setPadding(dp(4), 0, dp(4), 0);
+                perfBox.addView(ne);
+            }
+            for (int i = all.size() - 1; i >= Math.max(0, all.size() - 8); i--) {
+                Diagnose.Ev e = all.get(i);
+                LinearLayout ec = card();
+                ec.setOrientation(LinearLayout.VERTICAL);
+                ec.setGravity(Gravity.START);
+                int col = "THERMAL".equals(e.type) ? RED : "PING".equals(e.type) ? 0xFF6EA8FE : YEL;
+                ec.addView(text(e.title, 13, col, true));
+                ec.addView(text(e.detail, 12, TX, false));
+                if (e.rec != null) ec.addView(text(L.t("Öneri: ") + e.rec, 11, TX2, false));
+                perfBox.addView(ec, mlp(6));
+            }
+        }
+
         if (fps.length > 1) {
             boolean anyFps = false;
             for (int x : fps) if (x > 0) { anyFps = true; break; }
@@ -1775,6 +1847,10 @@ public class MainActivity extends Activity {
         r.append("PANEL  ").append(Settings.canDrawOverlays(this) ? "Açık" : L.t("Kapalı")).append('\n');
         r.append("KULLANIM ERİŞİMİ  ").append(Boost.usageAllowed(this) ? "Açık" : L.t("Kapalı")).append('\n');
         r.append("GÜVENLİ AYARLAR  ").append(Tweaks.secureAllowed(this) ? "Açık" : L.t("Kapalı")).append('\n');
+        Telemetry tl = Live.tele;
+        r.append("TELEMETRİ  ").append(tl == null ? "son oyunda okunmadı (Shizuku ile oyun sırasında)"
+                : "GPU " + (tl.gpuLoad >= 0 ? "%" + tl.gpuLoad + " (" + tl.gpuSource + ")" : "yok") + " · GPU MHz " + (tl.gpuMhz >= 0 ? tl.gpuMhz : "yok")
+                + " · CPU " + (tl.cpuUsage >= 0 ? "%" + tl.cpuUsage : "yok") + " · " + tl.clusters.size() + " küme").append('\n');
         r.append("ICMP  ").append(Boost.icmpMethod()).append(Boost.icmpErr.isEmpty() ? "" : " · son hata: " + Boost.icmpErr).append('\n');
         r.append("FPS ÖLÇÜMÜ  ").append(!Sh.granted() ? "Kullanılamıyor (Shizuku yok)" : Live.fpsStats() != null ? "Çalışıyor" : "Henüz ölçülmedi").append('\n');
         r.append("YENİLEME HIZLARI  ").append(Tweaks.refreshRates(this)).append(" Hz\n");

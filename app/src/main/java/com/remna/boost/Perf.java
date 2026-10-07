@@ -132,6 +132,7 @@ final class Perf {
         float maxBatt = 0, maxCpu = 0;
         int stutter, heavy, spikes;
         FrameMetrics metrics;
+        java.util.List<Diagnose.Ev> events;
         float icmpLoss = -1;
 
         void add(int f, int p, float batt, float cpu) {
@@ -153,6 +154,13 @@ final class Perf {
                 o.put("stutter", stutter);
                 o.put("spikes", spikes);
                 if (icmpLoss >= 0) o.put("loss", icmpLoss);
+                if (events != null && !events.isEmpty()) {
+                    JSONArray ev = new JSONArray();
+                    int from = Math.max(0, events.size() - 8);
+                    for (int i = from; i < events.size(); i++) ev.put(events.get(i).title + " — " + events.get(i).detail);
+                    o.put("events", ev);
+                    o.put("eventCount", events.size());
+                }
                 if (metrics != null) {
                     o.put("exact", metrics.exact);
                     o.put("low01", Math.round(metrics.low01));

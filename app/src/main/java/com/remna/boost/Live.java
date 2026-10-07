@@ -13,6 +13,9 @@ final class Live {
     static volatile float cpu = -1, batt = 0;
     static volatile String pingSrc = "";
     static volatile boolean inGame;
+    static volatile Telemetry tele;
+    private static final int[] gpuH = new int[N], cpuH = new int[N];
+    private static long sampleCounter;
     static volatile int targetFps = 60;
     private static final int MAX_FRAMES = 60000;
     private static float[] frameBuf = new float[MAX_FRAMES];
@@ -36,6 +39,8 @@ final class Live {
         sessionFps.clear();
         estPing.clear();
         frameN = 0;
+        tele = null;
+        sampleCounter = 0;
         icmpSent = 0; icmpLost = 0; estFail = 0; spikes = 0; lastSpike = "";
         fps = -1; ping = -1; cpu = -1;
         ftAvg = -1; ftMax = -1; stutterTotal = 0; heavyTotal = 0;
@@ -99,6 +104,10 @@ final class Live {
 
     static synchronized void sample(int f, int p, float t) {
         fpsH[pos] = f; pingH[pos] = p; tempH[pos] = Math.round(t); ftH[pos] = ftMax < 0 ? -1 : Math.round(ftMax);
+        Telemetry tl = tele;
+        gpuH[pos] = tl == null ? -1 : tl.gpuLoad;
+        cpuH[pos] = tl == null ? -1 : tl.cpuUsage;
+        sampleCounter++;
         pos = (pos + 1) % N;
         if (count < N) count++;
         // 10 FPS altı: yükleme ekranı / arka plana geçiş — oyun performansı değil, istatistiğe katma
@@ -119,6 +128,16 @@ final class Live {
     static synchronized int[] tempSeries() { return ordered(tempH); }
 
     static synchronized int[] ftSeries() { return ordered(ftH); }
+
+    static synchronized int[] gpuSeries() { return ordered(gpuH); }
+
+    static synchronized int[] cpuSeries() { return ordered(cpuH); }
+
+    /** Şu anki örneğin toplam sırası (olayları zaman çizelgesine yerleştirmek için). */
+    static synchronized int sampleIndex() { return (int) sampleCounter; }
+
+    /** Zaman çizelgesinin ilk örneğinin toplam sırası. */
+    static synchronized int firstIndex() { return (int) (sampleCounter - count); }
 
     /** Son 30 ping ölçümünden istatistik (başarısızlar kayıp sayılır). */
     static synchronized PingStats pingStats() {
