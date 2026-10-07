@@ -14,7 +14,6 @@ final class Live {
     static volatile String pingSrc = "";
     static volatile boolean inGame;
     static volatile Telemetry tele;
-    private static final int[] gpuH = new int[N], cpuH = new int[N];
     private static long sampleCounter;
     static volatile int targetFps = 60;
     private static final int MAX_FRAMES = 60000;
@@ -26,6 +25,7 @@ final class Live {
     static volatile String lastSpike = "";
 
     static final int N = 150; // 2 sn aralıkla ~5 dakika
+    private static final int[] gpuH = new int[N], cpuH = new int[N];
     private static final int[] fpsH = new int[N], pingH = new int[N], tempH = new int[N], ftH = new int[N];
     static volatile float ftAvg = -1, ftMax = -1;
     static volatile int stutterTotal, heavyTotal;
