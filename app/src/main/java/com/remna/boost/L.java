@@ -17,6 +17,13 @@ final class L {
     private static void put(String tr, String en, String ru, String tk) { M.put(tr, new String[]{en, ru, tk}); }
 
     static {
+        put("CİHAZ", "DEVICE", "УСТРОЙСТВО", "ENJAM");
+        put("BELLEK", "MEMORY", "ПАМЯТЬ", "ÝAT");
+        put("TERMAL", "THERMAL", "ТЕМП.", "TERMAL");
+        put("OYUN", "GAME", "ИГРА", "OÝUN");
+        put("OPTİMİZE", "OPTIMIZED", "ОПТИМИЗИРОВАНО", "OPTIMIZIRLENDI");
+        put("Dokunsal geri bildirim", "Haptic feedback", "Тактильный отклик", "Degiş jogaby");
+        put("BOOST, tamamlanma ve termal uyarıda kısa titreşim", "Short vibration on BOOST, completion and thermal warning", "Короткая вибрация при BOOST, завершении и перегреве", "BOOST, tamamlanma we termal duýduryşda gysga titreme");
         put("küçük", "little", "малые", "kiçi");
         put("orta", "mid", "средние", "orta");
         put("büyük", "big", "большие", "uly");

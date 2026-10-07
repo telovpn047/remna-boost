@@ -14,8 +14,8 @@ android {
         applicationId 'com.remna.boost'
         minSdk 26
         targetSdk 34
-        versionCode 12
-        versionName '1.9.0'
+        versionCode 13
+        versionName '2.0.0'
     }
     signingConfigs {
         release {
@@ -36,10 +36,12 @@ android {
         }
     }
     lint { checkReleaseBuilds false; abortOnError false }
+    testOptions { unitTests.returnDefaultValues = true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = '17' }
 }
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'
 }

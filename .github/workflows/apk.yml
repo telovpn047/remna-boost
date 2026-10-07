@@ -33,4 +33,4 @@ jobs:
         if: always()
         run: rm -f app/release.jks
       - uses: softprops/action-gh-release@v2
-        with: { tag_name: 'v1.9.0-${{ github.run_number }}', name: 'Remna Boost 1.9.0 (${{ github.run_number }})', files: RemnaBoost.apk, make_latest: true }
+        with: { tag_name: 'v2.0.0-${{ github.run_number }}', name: 'Remna Boost 2.0.0 (${{ github.run_number }})', files: RemnaBoost.apk, make_latest: true }

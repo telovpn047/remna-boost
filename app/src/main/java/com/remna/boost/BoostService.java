@@ -184,7 +184,7 @@ public class BoostService extends Service {
             // termal yönetici: ısınınca kademeli düşür (WARM 90 Hz, HOT/PROTECT 60 Hz), soğuyunca bekleyip yükselt
             Thermal.State ns = thermal.update(BoostService.this, bt);
             if (ns != null) {
-                if (ns.ordinal() >= Thermal.State.HOT.ordinal()) notifyCool(bt, ns);
+                if (ns.ordinal() >= Thermal.State.HOT.ordinal()) { notifyCool(bt, ns); Haptics.warn(BoostService.this); }
                 else getSystemService(NotificationManager.class).cancel(2);
             }
             // oyundan çıkınca (30 sn) her şeyi geri al

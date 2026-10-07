@@ -156,6 +156,9 @@ public class MainActivity extends Activity {
     ScrollView[] scrolls = new ScrollView[TABS];
     TextView[] tabs = new TextView[TABS];
     int tab = 0;
+    HealthRing healthRing;
+    LinearLayout stepsBox;
+    int stepNo;
     TextView statusPill, healthScore, healthLabel, healthBody, fpsBig, fpsSub;
     LinearLayout setupBox, profileRow, healthParts, perfBox;
     final PingStats homePing = new PingStats();
@@ -307,6 +310,16 @@ public class MainActivity extends Activity {
             return false;
         });
         root.addView(bf, mlp(10));
+        stepsBox = new LinearLayout(this);
+        stepsBox.setGravity(Gravity.CENTER);
+        stepsBox.setVisibility(View.GONE);
+        String[] sn = {L.t("CİHAZ"), L.t("BELLEK"), L.t("AĞ"), L.t("TERMAL"), L.t("OYUN")};
+        for (String x : sn) {
+            TextView t = text("○ " + x, 10, TX3, true);
+            t.setPadding(dp(5), 0, dp(5), 0);
+            stepsBox.addView(t);
+        }
+        root.addView(stepsBox, mlp(2));
 
         LinearLayout st = new LinearLayout(this);
         fpsBig = metric(st, "FPS");
@@ -330,8 +343,9 @@ public class MainActivity extends Activity {
         healthLabel = text(L.t("ÖLÇÜLÜYOR"), 16, TX, true);
         hl.addView(healthLabel);
         hr.addView(hl, new LinearLayout.LayoutParams(0, -2, 1));
-        healthScore = text("—", 34, TX, true);
-        hr.addView(healthScore);
+        healthScore = text("", 1, TX, false); // eski alan (kullanılmıyor)
+        healthRing = new HealthRing(this);
+        hr.addView(healthRing, new LinearLayout.LayoutParams(dp(84), dp(84)));
         hc.addView(hr);
         healthParts = new LinearLayout(this);
         hc.addView(healthParts, mlp(10));
@@ -363,6 +377,18 @@ public class MainActivity extends Activity {
             qa.addView(t, lp);
         }
         root.addView(qa);
+    }
+
+    /** Sayıyı eski değerden yenisine 400 ms'de sayarak geçirir; değer yoksa "—". */
+    void animNum(TextView tv, int to, String suffix) {
+        if (to < 0) { tv.setTag(null); tv.setText("—"); return; }
+        Object prev = tv.getTag();
+        tv.setTag(to);
+        if (!(prev instanceof Integer) || (Integer) prev == to) { tv.setText(to + suffix); return; }
+        android.animation.ValueAnimator a = android.animation.ValueAnimator.ofInt((Integer) prev, to);
+        a.setDuration(400);
+        a.addUpdateListener(x -> tv.setText(x.getAnimatedValue() + suffix));
+        a.start();
     }
 
     void chooseLanguage() {
@@ -402,24 +428,24 @@ public class MainActivity extends Activity {
         while (homePing.sent > 12) { homePing.sent--; if (!homePing.samples.isEmpty()) homePing.samples.remove(0); }
         boolean live = BoostService.running;
         int f = live ? Live.fps : -1;
-        fpsBig.setText(f < 0 ? "—" : String.valueOf(f));
+        animNum(fpsBig, f, "");
         fpsBig.setTextColor(f < 0 ? TX3 : f >= 55 ? GREEN : f >= 30 ? YEL : RED);
         float temp = Boost.batteryTemp(this);
-        tempTv.setText(String.format(java.util.Locale.US, "%.0f°", temp));
+        animNum(tempTv, Math.round(temp), "°");
         tempTv.setTextColor(temp < 38 ? TX : temp < 43 ? YEL : RED);
         PingStats ps = live && Live.pingStats().sent > 0 ? Live.pingStats() : live && !Live.estStats().empty() ? Live.estStats() : homePing;
         int pm = ps.median();
         if (!live && homePingMs != Integer.MIN_VALUE) pm = homePingMs > 0 ? homePingMs : pm;
-        pingTv.setText(pm < 0 ? "—" : String.valueOf(pm));
+        animNum(pingTv, pm, "");
         pingTv.setTextColor(pm < 0 ? TX3 : pm < 80 ? GREEN : pm < 150 ? YEL : RED);
         Health hh = Health.compute(live ? Live.metrics() : null, Integer.parseInt(prefs.getString("target_fps", "60")), ps, temp, Boost.availRam(this), Boost.totalRam(this));
         if (pingLbl != null) {
             String src = live ? Live.pingSrc : "";
             pingLbl.setText("oyun".equals(src) ? L.t("PING · OYUN") : "≈".equals(src) ? L.t("PING · TAHMİNİ") : L.t("PING · BÖLGE"));
         }
-        healthScore.setText(hh.total < 0 ? "—" : String.valueOf(hh.total));
+        healthRing.setScore(hh.total, hh.total < 0 ? TX3 : hh.total >= 75 ? GREEN : hh.total >= 55 ? YEL : RED);
         int col = hh.total < 0 ? TX3 : hh.total >= 75 ? GREEN : hh.total >= 55 ? YEL : RED;
-        healthScore.setTextColor(col);
+
         healthLabel.setText(Health.label(hh.total));
         healthParts.removeAllViews();
         String[] pl = {"FPS", L.t("AĞ"), L.t("ISI"), "RAM"};
@@ -430,7 +456,8 @@ public class MainActivity extends Activity {
             c.setGravity(Gravity.CENTER);
             c.setPadding(0, dp(8), 0, dp(8));
             c.setBackground(round(CARD2, 12));
-            TextView v = text(pv[i] < 0 ? "—" : String.valueOf(pv[i]), 15, pv[i] < 0 ? TX3 : pv[i] >= 75 ? GREEN : pv[i] >= 55 ? YEL : RED, true);
+            String sym = pv[i] < 0 ? "" : pv[i] >= 75 ? "✓ " : pv[i] >= 55 ? "! " : "⚠ ";
+            TextView v = text(pv[i] < 0 ? "—" : sym + pv[i], 15, pv[i] < 0 ? TX3 : pv[i] >= 75 ? GREEN : pv[i] >= 55 ? YEL : RED, true);
             c.addView(v);
             c.addView(text(pl[i], 10, TX3, true));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
@@ -735,7 +762,8 @@ public class MainActivity extends Activity {
                 new String[]{L.t("Kapalı (elle kapat)"), L.t("15 sn sonra"), L.t("30 sn sonra"), L.t("60 sn sonra")}, new String[]{"0", "15", "30", "60"}, this::askUsage), mlp(8));
 
         root.addView(section(L.t("UYGULAMA")));
-        root.addView(navCard(L.t("Dil"), L.name(prefs.getString("lang", "")), v -> chooseLanguage()));
+        root.addView(toggle(L.t("Dokunsal geri bildirim"), L.t("BOOST, tamamlanma ve termal uyarıda kısa titreşim"), "haptics", true, null));
+        root.addView(navCard(L.t("Dil"), L.name(prefs.getString("lang", "")), v -> chooseLanguage()), mlp(8));
         root.addView(navCard(L.t("İzinler"), L.t("Hangi izin ne için kullanılır"), v -> openPermissions()), mlp(8));
         root.addView(navCard(L.t("Gizlilik"), L.t("Sunucu geçmişi, konum sorgusu, veri silme"), v -> openPrivacy()), mlp(8));
         root.addView(navCard(L.t("Tanılama"), L.t("Sistem durumu ve kopyalanabilir rapor"), v -> openDiagnostics()), mlp(8));
@@ -1394,6 +1422,9 @@ public class MainActivity extends Activity {
             toast(L.t("Ping ve diğer özellikler çalışıyor. FPS göstergesi için isteğe bağlı Shizuku gerekir."));
         }
         big.setBusy(true);
+        Haptics.light(this);
+        stepNo = 0;
+        markSteps(0);
         new Thread(() -> {
             java.util.List<String> done = new java.util.ArrayList<>(), skipped = new java.util.ArrayList<>();
             step(L.t("CİHAZ ANALİZİ"));
@@ -1438,8 +1469,12 @@ public class MainActivity extends Activity {
             h.post(() -> {
                 big.setBusy(false);
                 big.success();
+                markSteps(99);
+                Haptics.success(this);
                 btnLabel.setTextSize(26);
                 btnLabel.setText("✓");
+                h.postDelayed(() -> { btnLabel.setTextSize(16); btnLabel.setText(L.t("OPTİMİZE")); }, 900);
+                h.postDelayed(() -> { if (stepsBox != null) stepsBox.setVisibility(View.GONE); }, 4000);
                 Intent sv = new Intent(this, BoostService.class).putExtra("game", game);
                 startForegroundService(sv);
                 showBoostResult(done, skipped, fPing, temp);
@@ -1447,7 +1482,28 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    void step(String t) { h.post(() -> { btnLabel.setTextSize(14); btnLabel.setText(t); }); sleep(350); }
+    void step(String t) {
+        final int n = stepNo++;
+        h.post(() -> {
+            btnLabel.setTextSize(14);
+            btnLabel.setText(t);
+            markSteps(n);
+        });
+        sleep(350);
+    }
+
+    /** Adım listesi: önceki adımlar ✓, şimdiki ◌, sonrakiler ○ (renk + sembol). */
+    void markSteps(int active) {
+        if (stepsBox == null) return;
+        stepsBox.setVisibility(View.VISIBLE);
+        for (int i = 0; i < stepsBox.getChildCount(); i++) {
+            TextView t = (TextView) stepsBox.getChildAt(i);
+            String name = t.getText().toString().substring(2);
+            if (i < active) { t.setText("✓ " + name); t.setTextColor(GREEN); }
+            else if (i == active) { t.setText("◌ " + name); t.setTextColor(TX); }
+            else { t.setText("○ " + name); t.setTextColor(TX3); }
+        }
+    }
 
     static void sleep(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
 
@@ -2066,9 +2122,12 @@ public class MainActivity extends Activity {
         void success() { successUntil = System.currentTimeMillis() + 1400; invalidate(); }
 
         @Override protected void onDraw(Canvas cv) {
-            float w = getWidth(), h = getHeight(), cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2;
+            float w = getWidth(), h = getHeight(), cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 / 1.015f;
             float d = getResources().getDisplayMetrics().density;
             boolean ok = System.currentTimeMillis() < successUntil;
+            float sc = busy ? 1f : 1f + 0.015f * pulse;
+            cv.save();
+            cv.scale(sc, sc, cx, cy);
             int glowA = (int) (0x30 + 0x30 * (busy ? 1 : pulse));
             int glow = ok ? 0x35E6A1 : 0xFF6B35;
             p.setShader(new RadialGradient(cx, cy, R, new int[]{(glowA << 24) | glow, 0x10000000 | glow, 0}, new float[]{0.5f, 0.78f, 1f}, Shader.TileMode.CLAMP));
@@ -2093,6 +2152,7 @@ public class MainActivity extends Activity {
                 cv.drawCircle(cx, cy, r2, ring);
                 if (ok) postInvalidateDelayed(100);
             }
+            cv.restore();
         }
     }
 }
