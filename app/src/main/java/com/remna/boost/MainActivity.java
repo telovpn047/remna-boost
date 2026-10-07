@@ -964,7 +964,7 @@ public class MainActivity extends Activity {
 
     String buildHistoryReport(java.util.List<ServerLog.Row> rows) {
         java.util.Collections.sort(rows, (a, b) -> {
-            int pa = a.ping < 0 ? 99999 : a.ping, pb = b.ping < 0 ? 99999 : b.ping;
+            int pa = a.ping < 0 || "tcp".equals(a.how) ? 99999 : a.ping, pb = b.ping < 0 || "tcp".equals(b.how) ? 99999 : b.ping;
             return pa != pb ? pa - pb : b.n - a.n;
         });
         int udp = 0, tcp = 0;
@@ -1004,8 +1004,8 @@ public class MainActivity extends Activity {
         sb.append("\n== SUNUCULAR (pinge göre) ==\n");
         for (ServerLog.Row r : rows) {
             String as = r.as.length() > 22 ? r.as.substring(0, 22) : r.as;
-            sb.append(String.format(java.util.Locale.US, "%6s%s %s  %-15s %dx%n", r.ping < 0 ? "—" : r.ping + "ms",
-                    r.stale ? "*" : "tcp".equals(r.how) && r.ping > 0 ? "ᵗ" : " ", r.proto, r.ip, r.n));
+            String pv = r.ping < 0 ? "—" : "tcp".equals(r.how) ? "TCP✓" : r.ping + "ms";
+            sb.append(String.format(java.util.Locale.US, "%6s%s %s  %-15s %dx%n", pv, r.stale && !"tcp".equals(r.how) ? "*" : " ", r.proto, r.ip, r.n));
             sb.append("        ").append(r.where).append(" · ").append(as)
                     .append(r.vpn && r.direct ? " · VPN+doğrudan" : r.vpn ? " · VPN'de görüldü" : " · doğrudan görüldü").append('\n');
         }
@@ -1016,7 +1016,9 @@ public class MainActivity extends Activity {
         sb.append("\nUDP sunucuları PUBG'nin eşleştirmede yokladığı bölge noktalarıdır; maçın kendi sunucusu root olmadan görünmez.");
         sb.append("\n* = şimdi ölçülemedi, önceki ölçüm gösteriliyor.");
         if (Boost.vpnActive(this)) sb.append("\n⚠ VPN açık: çoğu VPN ping/yoklamayı tünelden geçirmez. Doğru sonuç için VPN'i kapatıp tekrar analiz et.");
-        sb.append("\nᵗ = ICMP kapalı, TCP yoklamasıyla ölçüldü. '—' = güvenilir ölçüm alınamadı.\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
+        sb.append("\nTCP✓ = ICMP yanıt vermedi, TCP ile erişilebilir. Süre gösterilmez: Türkmenistan'da güvenlik duvarı sahte TCP yanıtları gönderdiği için güvenilir değil.");
+        sb.append("\nICMP yöntemi: ").append(Boost.icmpMethod());
+        sb.append("\nᵗ (eski kayıt) = TCP ile ölçülmüştü. '—' = güvenilir ölçüm alınamadı.\nNot: Maç sunucusunu PUBG seçer; sen lobideki bölgeyi ve rotayı (VPN/doğrudan) seçebilirsin. '—' sunucunun ICMP'ye yanıt vermediğini gösterir. VPN açık ve kapalıyken ayrı ayrı analiz edip karşılaştır.");
         return sb.toString();
     }
 
@@ -1059,8 +1061,10 @@ public class MainActivity extends Activity {
             if (!Sh.granted()) { post(dlg, body, sb + "\nPing ve rota için Shizuku gerekli."); return; }
             int p = Sh.icmp(ip);
             String how = "ICMP";
-            if (p < 0) { p = Boost.tcpProbe(ip, 443, 80, 8080); how = "TCP yoklama"; }
-            sb.append("Ping: ").append(p < 0 ? "yanıt yok" : p + " ms (" + how + ")").append("\n\n");
+            if (p < 0) {
+                boolean reach = Boost.tcpProbe(ip, 443, 80, 8080) > 0;
+                sb.append("Ping: ICMP yanıt yok").append(reach ? " · TCP ile erişilebilir (süre güvenilmez)" : "").append("\n\n");
+            } else sb.append("Ping: ").append(p).append(" ms (").append(how).append(" · ").append(Boost.icmpMethod()).append(")\n\n");
             sb.append("Rota (traceroute):\n");
             post(dlg, body, sb + "…");
             for (String[] hop : Sh.trace(ip, 20)) {
@@ -1221,11 +1225,11 @@ public class MainActivity extends Activity {
             new Thread(() -> {
                 java.util.List<String> dcs = Boost.dcFor(this, regionOfHost(REGIONS[idx][1]) == null ? REGIONS[idx][0] : regionOfHost(REGIONS[idx][1]));
                 String dcIp = null;
-                for (String ip : dcs) if (Boost.icmpOnce(ip, 1200, 1) > 0) { dcIp = ip; break; }
+                for (String ip : dcs) if (Boost.icmpSample(ip, 1200, 1) > 0) { dcIp = ip; break; }
                 final String target = dcIp;
                 PingStats ps = new PingStats();
                 for (int k = 0; k < 10; k++) {
-                    ps.add(target != null ? Boost.icmpOnce(target, 1200, k + 2) : Boost.rtt(REGIONS[idx][1]));
+                    ps.add(target != null ? Boost.icmpSample(target, 1200, k + 2) : Boost.rtt(REGIONS[idx][1]));
                     try { Thread.sleep(120); } catch (InterruptedException ignored) {}
                 }
                 h.post(() -> {
@@ -1771,6 +1775,7 @@ public class MainActivity extends Activity {
         r.append("PANEL  ").append(Settings.canDrawOverlays(this) ? "Açık" : L.t("Kapalı")).append('\n');
         r.append("KULLANIM ERİŞİMİ  ").append(Boost.usageAllowed(this) ? "Açık" : L.t("Kapalı")).append('\n');
         r.append("GÜVENLİ AYARLAR  ").append(Tweaks.secureAllowed(this) ? "Açık" : L.t("Kapalı")).append('\n');
+        r.append("ICMP  ").append(Boost.icmpMethod()).append(Boost.icmpErr.isEmpty() ? "" : " · son hata: " + Boost.icmpErr).append('\n');
         r.append("FPS ÖLÇÜMÜ  ").append(!Sh.granted() ? "Kullanılamıyor (Shizuku yok)" : Live.fpsStats() != null ? "Çalışıyor" : "Henüz ölçülmedi").append('\n');
         r.append("YENİLEME HIZLARI  ").append(Tweaks.refreshRates(this)).append(" Hz\n");
         r.append(String.format(java.util.Locale.US, "TERMAL  pil %.0f°C · sensör %s%n", Boost.batteryTemp(this), Perf.cpuCache > 0 ? Perf.cpuLabel + " " + Math.round(Perf.cpuCache) + "°C" : "okunamıyor"));

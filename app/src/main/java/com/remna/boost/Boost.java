@@ -223,12 +223,89 @@ final class Boost {
      * soketi izni verir (ping_group_range). En iyi 3 denemeyi döner; yanıt yoksa -1.
      */
     static int icmp(String ip) {
-        int best = -1;
-        for (int i = 0; i < 3; i++) {
-            int r = icmpOnce(ip, 1000, i + 1);
-            if (r >= 0 && (best < 0 || r < best)) best = r;
+        // 1) ping soketi (bazı cihazlarda SELinux engeller)
+        if (icmpMode != 2) {
+            int best = -1;
+            for (int i = 0; i < 3; i++) {
+                int r = icmpOnce(ip, 1000, i + 1);
+                if (r >= 0 && (best < 0 || r < best)) best = r;
+            }
+            if (best > 0) { icmpMode = 1; return best; }
+            if (icmpMode == 0 && icmpSocketBroken) icmpMode = 2; // soket hiç açılamıyorsa bir daha deneme
         }
-        return best;
+        // 2) sistemin ping programı (Termux'taki yöntemle aynı; Shizuku gerekmez)
+        int e = execPing(ip);
+        if (e > 0) icmpMode = 2;
+        return e;
+    }
+
+    /** Tek örnek (istatistik için): çalışan yöntemle 1 ping. Yanıt yoksa -1. */
+    static int icmpSample(String ip, int timeoutMs, int seq) {
+        if (icmpMode != 2) {
+            int r = icmpOnce(ip, timeoutMs, seq);
+            if (r > 0) { icmpMode = 1; return r; }
+            if (icmpMode == 1) return -1; // soket çalışıyor, bu paket kayboldu
+        }
+        int r = execPingOnce(ip, Math.max(1, timeoutMs / 1000));
+        if (r > 0) icmpMode = 2;
+        return r;
+    }
+
+    static int execPingOnce(String ip, int waitSec) {
+        if (!ip.matches("[0-9.]+")) return -1;
+        Process p = null;
+        try {
+            p = Runtime.getRuntime().exec(new String[]{"/system/bin/ping", "-c", "1", "-W", String.valueOf(waitSec), ip});
+            try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
+                String l;
+                while ((l = r.readLine()) != null) {
+                    int i = l.indexOf("time=");
+                    if (i >= 0) return Math.max(1, Math.round(Float.parseFloat(l.substring(i + 5).split(" ")[0])));
+                }
+            }
+            return -1;
+        } catch (Exception ex) {
+            return -1;
+        } finally {
+            if (p != null) p.destroy();
+        }
+    }
+
+    /** 0 bilinmiyor, 1 ping soketi, 2 sistem ping programı. Tanılamada gösterilir. */
+    static volatile int icmpMode = 0;
+    static volatile boolean icmpSocketBroken;
+    static volatile String icmpErr = "";
+
+    static String icmpMethod() {
+        return icmpMode == 1 ? "ping soketi" : icmpMode == 2 ? "sistem ping programı" : "henüz belirlenmedi";
+    }
+
+    /** /system/bin/ping ile ölçüm (3 deneme, en iyisi). Yanıt yoksa -1. */
+    static int execPing(String ip) {
+        if (!ip.matches("[0-9.]+")) return -1;
+        Process p = null;
+        try {
+            p = Runtime.getRuntime().exec(new String[]{"/system/bin/ping", "-c", "3", "-i", "0.2", "-W", "1", ip});
+            int best = -1;
+            try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
+                String l;
+                while ((l = r.readLine()) != null) {
+                    int i = l.indexOf("time=");
+                    if (i < 0) continue;
+                    try {
+                        int ms = Math.round(Float.parseFloat(l.substring(i + 5).split(" ")[0]));
+                        if (ms > 0 && (best < 0 || ms < best)) best = ms;
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            p.waitFor();
+            return best;
+        } catch (Exception ex) {
+            icmpErr = "exec: " + ex.getClass().getSimpleName();
+            return -1;
+        } finally {
+            if (p != null) p.destroy();
+        }
     }
 
     static int icmpOnce(String ip, int timeoutMs, int seq) {
@@ -261,6 +338,8 @@ final class Boost {
                     return (int) Math.max(1, (System.nanoTime() - t) / 1_000_000);
             }
         } catch (Throwable e) {
+            if (fd == null) icmpSocketBroken = true; // soket oluşturulamadı (izin/SELinux)
+            icmpErr = "soket: " + e.getClass().getSimpleName() + (e.getMessage() == null ? "" : " " + e.getMessage());
             return -1;
         } finally {
             if (fd != null) try { android.system.Os.close(fd); } catch (Throwable ignored) {}
