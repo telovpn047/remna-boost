@@ -12,7 +12,7 @@ import org.json.JSONObject;
 final class GameProfiles {
     private GameProfiles() {}
 
-    static final String[] KEYS = {"profile", "hz_mode", "cleanup", "thermal", "dnd_mode", "ov_mode", "gm_mode", "gm_scale", "gm_fps", "anim_mode"};
+    static final String[] KEYS = {"profile", "hz_mode", "cleanup", "thermal", "dnd_mode", "ov_mode", "gm_mode", "gm_scale", "gm_fps", "anim_mode", "target_fps"};
     static final String[] BOOL_KEYS = {"touch", "autobright", "fps"};
 
     static void save(Context c, String pkg) {

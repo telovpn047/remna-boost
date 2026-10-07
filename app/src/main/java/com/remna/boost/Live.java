@@ -12,6 +12,15 @@ final class Live {
     static volatile int fps = -1, ping = -1;
     static volatile float cpu = -1, batt = 0;
     static volatile String pingSrc = "";
+    static volatile boolean inGame;
+    static volatile int targetFps = 60;
+    private static final int MAX_FRAMES = 60000;
+    private static float[] frameBuf = new float[MAX_FRAMES];
+    private static int frameN;
+    /** Tahmini (HTTP) ping ölçümleri: kayıp sayılmaz, ayrı tutulur. */
+    private static final ArrayDeque<Integer> estPing = new ArrayDeque<>();
+    static volatile int icmpSent, icmpLost, estFail, spikes;
+    static volatile String lastSpike = "";
 
     static final int N = 150; // 2 sn aralıkla ~5 dakika
     private static final int[] fpsH = new int[N], pingH = new int[N], tempH = new int[N], ftH = new int[N];
@@ -25,6 +34,9 @@ final class Live {
         count = 0; pos = 0;
         recentPing.clear();
         sessionFps.clear();
+        estPing.clear();
+        frameN = 0;
+        icmpSent = 0; icmpLost = 0; estFail = 0; spikes = 0; lastSpike = "";
         fps = -1; ping = -1; cpu = -1;
         ftAvg = -1; ftMax = -1; stutterTotal = 0; heavyTotal = 0;
     }
@@ -37,9 +49,52 @@ final class Live {
         heavyTotal += hv;
     }
 
-    static synchronized void pushPing(int p) {
-        recentPing.addLast(p);
-        while (recentPing.size() > 30) recentPing.removeFirst();
+    /** Kare süreleri ekle (yalnız oyun ön plandayken çağrılır). */
+    static synchronized void addFrames(float[] ft) {
+        for (float v : ft) {
+            if (frameN >= MAX_FRAMES) { // en eski yarıyı at
+                System.arraycopy(frameBuf, MAX_FRAMES / 2, frameBuf, 0, MAX_FRAMES / 2);
+                frameN = MAX_FRAMES / 2;
+            }
+            frameBuf[frameN++] = v;
+        }
+    }
+
+    /**
+     * Ping örneği. method "icmp": gerçek ICMP; başarısızlık paket kaybıdır. "est": tahmini HTTP ölçümü; başarısızlığı
+     * kayıp değil "tahmin başarısız" sayılır ve istatistiklere karışmaz.
+     */
+    static synchronized void pushPing(int p, String method) {
+        if ("icmp".equals(method)) {
+            icmpSent++;
+            if (p < 0) icmpLost++;
+            // ani yükselme: ortancanın 1.8 katı ve 40 ms üstü
+            PingStats cur = pingStats();
+            int med = cur.median();
+            if (p > 0 && med > 0 && cur.samples.size() >= 5 && p > med * 1.8 && p - med > 40) {
+                spikes++;
+                lastSpike = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date()) + "  " + med + " → " + p + " ms";
+            }
+            recentPing.addLast(p);
+            while (recentPing.size() > 30) recentPing.removeFirst();
+        } else {
+            if (p < 0) estFail++;
+            else { estPing.addLast(p); while (estPing.size() > 30) estPing.removeFirst(); }
+        }
+    }
+
+    /** Yalnız tahmini ölçümler varsa onların istatistiği (kayıp hesaplanmaz). */
+    static synchronized PingStats estStats() {
+        PingStats s = new PingStats();
+        for (int p : estPing) s.add(p);
+        return s;
+    }
+
+    /** Oturum FPS/kare metrikleri; kare verisi varsa kesin, yoksa saniyelik FPS'ten yaklaşık. */
+    static synchronized FrameMetrics metrics() {
+        List<Integer> f = new ArrayList<>(sessionFps);
+        if (frameN >= 120) return FrameMetrics.fromFrames(java.util.Arrays.copyOf(frameBuf, frameN), f, targetFps);
+        return FrameMetrics.fromFps(f);
     }
 
     static synchronized void sample(int f, int p, float t) {

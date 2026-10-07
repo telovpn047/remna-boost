@@ -14,8 +14,8 @@ android {
         applicationId 'com.remna.boost'
         minSdk 26
         targetSdk 34
-        versionCode 8
-        versionName '1.6.0'
+        versionCode 10
+        versionName '1.8.0'
     }
     signingConfigs {
         release {

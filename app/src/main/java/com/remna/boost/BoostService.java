@@ -85,6 +85,8 @@ public class BoostService extends Service {
         Sh.layer = null;
         session = new Perf.Session();
         Live.reset();
+        Live.targetFps = Integer.parseInt(Boost.prefs(this).getString("target_fps", "60"));
+        Sh.drainFrames();
         new Thread(() -> {
             while (running) {
                 lastFps = (game != null && Boost.prefs(this).getBoolean("fps", true)) ? Sh.fps(game) : -1;
@@ -94,6 +96,8 @@ public class BoostService extends Service {
                 Live.fps = lastFps;
                 Live.cpu = lastCpu;
                 Live.frame(Sh.ftValid && lastFps > 0, Sh.ftAvg, Sh.ftMax, Sh.stutters, Sh.heavy);
+                float[] nf = Sh.drainFrames();
+                if (Live.inGame && nf.length > 0) Live.addFrames(nf);
                 try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
             }
         }).start();
@@ -158,7 +162,7 @@ public class BoostService extends Service {
             lastPing = v;
             Live.ping = v;
             Live.pingSrc = pingSrc;
-            Live.pushPing(v);
+            Live.pushPing(v, "≈".equals(pingSrc) ? "est" : "icmp");
             try { Thread.sleep(2000); } catch (InterruptedException e) { return; }
         }
     };
@@ -173,6 +177,7 @@ public class BoostService extends Service {
                     || game.equals(Boost.lastForeground(BoostService.this, game));
             if (session != null && inGame) session.add(lastFps, lastPing, bt, lastCpu);
             Live.batt = bt;
+            Live.inGame = inGame;
             if (inGame) Live.sample(lastFps, lastPing, bt);
             // termal yönetici: ısınınca kademeli düşür (WARM 90 Hz, HOT/PROTECT 60 Hz), soğuyunca bekleyip yükselt
             Thermal.State ns = thermal.update(BoostService.this, bt);
@@ -320,6 +325,9 @@ public class BoostService extends Service {
         h.removeCallbacks(tick);
         if (session != null) {
             session.stutter = Live.stutterTotal;
+            session.metrics = Live.metrics();
+            session.icmpLoss = Live.icmpSent == 0 ? -1 : Live.icmpLost * 100f / Live.icmpSent;
+            session.spikes = Live.spikes;
             session.heavy = Live.heavyTotal;
             session.save(this);
         }

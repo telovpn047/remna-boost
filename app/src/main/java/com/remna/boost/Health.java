@@ -11,16 +11,19 @@ final class Health {
 
     static double clamp(double v) { return Math.max(0, Math.min(100, v)); }
 
-    static Health compute(int[] fpsStats, PingStats ps, float batt, long avail, long totalRam) {
+    static Health compute(FrameMetrics fm, int target, PingStats ps, float batt, long avail, long totalRam) {
         Health h = new Health();
         double sum = 0, w = 0;
-        if (fpsStats != null) {
-            double avgScore = clamp(fpsStats[0] * 100.0 / 60);          // 60 FPS ve üstü tam puan
-            double stab = clamp(fpsStats[1] * 100.0 / Math.max(1, fpsStats[0]));
-            h.fps = (int) Math.round(0.6 * avgScore + 0.4 * stab);
+        if (fm != null && fm.avgFps > 0) {
+            // hedefe yakınlık (sabit 60 değil, oyunun hedef FPS'i), %1 düşük kararlılığı ve kare kararlılığı
+            double reach = clamp(fm.avgFps * 100.0 / Math.max(1, target));
+            double stab = clamp(fm.low1 * 100.0 / Math.max(1, fm.avgFps));
+            double fst = fm.frameStability >= 0 ? fm.frameStability : stab;
+            h.fps = (int) Math.round(0.5 * reach + 0.3 * stab + 0.2 * fst);
             sum += h.fps * 0.35; w += 0.35;
-            if (stab < 75) h.issues.add(L.t("FPS dalgalanıyor (%1 düşük ") + fpsStats[1] + ")");
-            else h.oks.add(L.t("FPS kararlı"));
+            if (reach < 85) h.issues.add(L.t("Hedefin altında: ") + Math.round(fm.avgFps) + " / " + target + " FPS");
+            if (stab < 75) h.issues.add(L.t("FPS dalgalanıyor (%1 düşük ") + Math.round(fm.low1) + ")");
+            else if (reach >= 85) h.oks.add(L.t("FPS kararlı"));
         }
         if (ps != null && !ps.empty()) {
             double med = clamp(100 - (ps.median() - 40) * 100.0 / 210);

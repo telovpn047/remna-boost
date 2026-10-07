@@ -159,6 +159,7 @@ public class MainActivity extends Activity {
     TextView statusPill, healthScore, healthLabel, healthBody, fpsBig, fpsSub;
     LinearLayout setupBox, profileRow, healthParts, perfBox;
     final PingStats homePing = new PingStats();
+    TextView lastMetricLabel, pingLbl, netLive;
     boolean showAdvanced;
 
     LinearLayout newPage(FrameLayout content, int i) {
@@ -197,6 +198,7 @@ public class MainActivity extends Activity {
         TextView l = text(label, 11, TX3, true);
         l.setLetterSpacing(0.1f);
         c.addView(l);
+        lastMetricLabel = l;
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
         lp.leftMargin = dp(4); lp.rightMargin = dp(4);
         parent.addView(c, lp);
@@ -309,6 +311,7 @@ public class MainActivity extends Activity {
         LinearLayout st = new LinearLayout(this);
         fpsBig = metric(st, "FPS");
         pingTv = metric(st, "PING");
+        pingLbl = lastMetricLabel;
         tempTv = metric(st, L.t("SICAKLIK"));
         root.addView(st, mlp(8));
         ramTv = new TextView(this); // RAM ana ekranda değil, sağlık kartında
@@ -404,12 +407,16 @@ public class MainActivity extends Activity {
         float temp = Boost.batteryTemp(this);
         tempTv.setText(String.format(java.util.Locale.US, "%.0f°", temp));
         tempTv.setTextColor(temp < 38 ? TX : temp < 43 ? YEL : RED);
-        PingStats ps = live && Live.pingStats().sent > 0 ? Live.pingStats() : homePing;
+        PingStats ps = live && Live.pingStats().sent > 0 ? Live.pingStats() : live && !Live.estStats().empty() ? Live.estStats() : homePing;
         int pm = ps.median();
         if (!live && homePingMs != Integer.MIN_VALUE) pm = homePingMs > 0 ? homePingMs : pm;
         pingTv.setText(pm < 0 ? "—" : String.valueOf(pm));
         pingTv.setTextColor(pm < 0 ? TX3 : pm < 80 ? GREEN : pm < 150 ? YEL : RED);
-        Health hh = Health.compute(live ? Live.fpsStats() : null, ps, temp, Boost.availRam(this), Boost.totalRam(this));
+        Health hh = Health.compute(live ? Live.metrics() : null, Integer.parseInt(prefs.getString("target_fps", "60")), ps, temp, Boost.availRam(this), Boost.totalRam(this));
+        if (pingLbl != null) {
+            String src = live ? Live.pingSrc : "";
+            pingLbl.setText("oyun".equals(src) ? L.t("PING · OYUN") : "≈".equals(src) ? L.t("PING · TAHMİNİ") : L.t("PING · BÖLGE"));
+        }
         healthScore.setText(hh.total < 0 ? "—" : String.valueOf(hh.total));
         int col = hh.total < 0 ? TX3 : hh.total >= 75 ? GREEN : hh.total >= 55 ? YEL : RED;
         healthScore.setTextColor(col);
@@ -446,6 +453,11 @@ public class MainActivity extends Activity {
         TextView netNote = text(L.t("En düşük ve en stabil mevcut bölgeyi analiz eder. Fiziksel gecikmeyi değiştirmez; doğru sonuç için VPN kapalıyken ölç."), 12, TX2, false);
         netNote.setPadding(dp(4), dp(4), dp(4), dp(8));
         root.addView(netNote);
+        netLive = text("", 12, TX2, false);
+        netLive.setTypeface(Typeface.MONOSPACE);
+        LinearLayout nl = card();
+        nl.addView(netLive, new LinearLayout.LayoutParams(-1, -2));
+        root.addView(nl);
         root.addView(navCard(L.t("Tüm bölgeleri test et"), L.t("Ortanca · dalgalanma · kayıp · kararlılık · skor"), v -> {
             try { openRegionTest(); } catch (RuntimeException t) { toast("Test açılamadı: " + t.getMessage()); }
         }));
@@ -455,6 +467,7 @@ public class MainActivity extends Activity {
         srvSub = text(L.t("Maça girince PUBG'nin bağlandığı sunucu burada görünür"), 12, TX2, false);
         ((LinearLayout) sv2.getChildAt(0)).addView(srvSub);
         root.addView(sv2);
+        root.addView(navCard(L.t("DNS testi"), L.t("Sağlayıcıları ölç, en iyisini bul, Özel DNS olarak uygula"), v -> openDns()), mlp(8));
         root.addView(navCard(L.t("Ağ geçmişi"), L.t("Bugün · 7 gün · 30 gün · bölge istatistikleri"), v -> openNetHistory(1)), mlp(8));
         LinearLayout hc = navCard(L.t("Sunucu geçmişi"), null, v -> openServerHistory());
         histSub = text(L.t("Oynadıkça bağlanılan sunucular bu cihazda saklanır"), 12, TX2, false);
@@ -510,6 +523,35 @@ public class MainActivity extends Activity {
         return c;
     }
 
+    /** Ağ sekmesi: oyun sunucusu / bölge / tahmini ölçümler ayrı; ICMP kaybı ile tahmin hataları ayrı. */
+    void renderNetLive() {
+        if (netLive == null) return;
+        StringBuilder sb = new StringBuilder();
+        if (!BoostService.running) {
+            int m = homePing.median();
+            sb.append(L.t("BÖLGE PİNGİ (ICMP)")).append('\n').append(m < 0 ? "—" : m + " ms").append("  ·  ").append(L.t("oyun modu kapalı")).append('\n');
+            sb.append(L.t("Oyun sunucusu pingi ve kayıp, oyun modu açıkken ölçülür."));
+            netLive.setText(sb.toString());
+            return;
+        }
+        String src = Live.pingSrc;
+        String title = "oyun".equals(src) ? L.t("OYUN SUNUCUSU (ICMP)") : "≈".equals(src) ? L.t("TAHMİNİ (HTTP) · ICMP alınamıyor") : L.t("BÖLGE: ") + src + " (ICMP)";
+        PingStats ps = Live.pingStats();
+        sb.append(title).append('\n');
+        if (!ps.empty()) {
+            sb.append(String.format(java.util.Locale.US, "%-9s %d ms%n", L.t("Şu an"), Live.ping));
+            sb.append(String.format(java.util.Locale.US, "%-9s %d ms   %-7s %d ms%n", L.t("Ortanca"), ps.median(), L.t("En iyi"), ps.best()));
+            sb.append(String.format(java.util.Locale.US, "%-9s %d ms   %-7s %d ms%n", L.t("En kötü"), ps.worst(), L.t("Dalg."), ps.jitter()));
+            sb.append(String.format(java.util.Locale.US, "%-9s %%%.1f  (%d/%d)%n", L.t("ICMP kaybı"), Live.icmpSent == 0 ? 0f : Live.icmpLost * 100f / Live.icmpSent, Live.icmpLost, Live.icmpSent));
+            sb.append(L.t("Ani yükselme: ")).append(Live.spikes).append(Live.lastSpike.isEmpty() ? "" : "  ·  " + Live.lastSpike).append('\n');
+        }
+        PingStats es = Live.estStats();
+        if (!es.empty() || Live.estFail > 0)
+            sb.append(L.t("Tahmini ölçüm (kayıp sayılmaz): ")).append(es.empty() ? "—" : es.median() + " ms").append(" · ").append(L.t("başarısız ")).append(Live.estFail).append('\n');
+        sb.append(L.t("DNS gecikmesi ayrı ölçülür: DNS testi."));
+        netLive.setText(sb.toString().trim());
+    }
+
     void renderPerf() {
         if (perfBox == null) return;
         perfBox.removeAllViews();
@@ -517,27 +559,48 @@ public class MainActivity extends Activity {
         TextView hdr = text(live ? L.t("CANLI · oyun modu açık") : L.t("Oyun modu kapalı · son oturum verileri"), 12, live ? OR : TX2, true);
         hdr.setPadding(dp(4), dp(4), 0, dp(6));
         perfBox.addView(hdr);
-        int[] fs = Live.fpsStats();
+        FrameMetrics fm = Live.metrics();
         int f = Live.fps;
+        int target = Integer.parseInt(prefs.getString("target_fps", "60"));
         perfBox.addView(statGrid(new String[][]{
-                {"FPS", live && f >= 0 ? String.valueOf(f) : fs == null ? L.t("Yok") : "—"},
-                {L.t("ORT"), fs == null ? "—" : String.valueOf(fs[0])},
-                {L.t("%1 DÜŞÜK"), fs == null ? "—" : String.valueOf(fs[1])},
-                {L.t("KARE"), live && Live.ftAvg > 0 ? String.format(java.util.Locale.US, "%.1f ms", Live.ftAvg) : live && f > 0 ? String.format(java.util.Locale.US, "%.1f ms", 1000f / f) : "—"}}));
-        if (fs == null) {
-            TextView n = text(Sh.granted() ? L.t("FPS bu oturumda ölçülemedi.") : L.t("FPS ölçümü bu cihazda kullanılamıyor (Gelişmiş → Shizuku)."), 11, TX3, false);
-            n.setPadding(dp(4), dp(6), 0, 0);
-            perfBox.addView(n);
-        }
+                {"FPS", live && f >= 0 ? String.valueOf(f) : fm == null ? L.t("Yok") : "—"},
+                {L.t("ORT"), fm == null ? "—" : FrameMetrics.f(fm.avgFps)},
+                {L.t("%1 DÜŞÜK"), fm == null ? "—" : FrameMetrics.f(fm.low1)},
+                {L.t("%0.1 DÜŞÜK"), fm == null ? "—" : FrameMetrics.f(fm.low01)}}));
+        perfBox.addView(statGrid(new String[][]{
+                {L.t("KARE ORT"), fm == null ? "—" : FrameMetrics.ms(fm.ftAvg)},
+                {"P95", fm == null ? "—" : FrameMetrics.ms(fm.p95)},
+                {"P99", fm == null ? "—" : FrameMetrics.ms(fm.p99)},
+                {L.t("DÜŞEN"), fm == null || fm.dropped < 0 ? "—" : String.valueOf(fm.dropped)}}), mlp(6));
+        perfBox.addView(statGrid(new String[][]{
+                {L.t("HEDEF"), target + " FPS"},
+                {L.t("MİN FPS"), fm == null ? "—" : FrameMetrics.f(fm.minFps)},
+                {L.t("KARE STAB."), fm == null || fm.frameStability < 0 ? "—" : "%" + fm.frameStability},
+                {L.t("FPS STAB."), fm == null || fm.fpsStability < 0 ? "—" : "%" + fm.fpsStability}}), mlp(6));
+        TextView prec = text(fm == null ? (Sh.granted() ? L.t("FPS bu oturumda ölçülemedi.") : L.t("FPS ölçümü bu cihazda kullanılamıyor (Gelişmiş → Shizuku)."))
+                : fm.exact ? "✓ " + L.t("Kesin · kare zaman damgalarından · ") + fm.frames + L.t(" kare")
+                : "! " + L.t("Yaklaşık · saniyelik FPS örneklerinden (kare verisi yok; P95/P99 ve %0.1 hesaplanmaz)"), 11, fm != null && fm.exact ? GREEN : TX3, false);
+        prec.setPadding(dp(4), dp(6), 0, 0);
+        perfBox.addView(prec);
         long tot = Boost.totalRam(this), av = Boost.availRam(this);
         android.content.Intent bi = registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         int lvl = bi == null ? -1 : bi.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
-        float cpu = live ? Live.cpu : -1;
-        LinearLayout g2 = statGrid(new String[][]{
+        float cpu = live ? Live.cpu : -1, gpu = live ? Perf.gpuCache : -1;
+        TextView th = section(L.t("SICAKLIK"));
+        perfBox.addView(th);
+        perfBox.addView(statGrid(new String[][]{
+                {L.t("PİL"), String.format(java.util.Locale.US, "%.0f°C", Boost.batteryTemp(this))},
+                {Perf.cpuLabel.toUpperCase(), cpu > 0 ? String.format(java.util.Locale.US, "%.0f°C", cpu) : L.t("Yok")},
+                {"GPU", gpu > 0 ? String.format(java.util.Locale.US, "%.0f°C", gpu) : L.t("Yok")},
+                {L.t("CİHAZ"), Perf.thermalLabel(Perf.thermalStatus(this))}}));
+        perfBox.addView(statGrid(new String[][]{
                 {"RAM", Boost.fmtGb(tot - av).replace(" GB", "") + " / " + Boost.fmtGb(tot)},
-                {L.t("PİL"), String.format(java.util.Locale.US, "%.0f°C · %%%d", Boost.batteryTemp(this), lvl)},
-                {Perf.cpuLabel.toUpperCase(), cpu > 0 ? String.format(java.util.Locale.US, "%.0f°C", cpu) : "—"}});
-        perfBox.addView(g2, mlp(8));
+                {L.t("PİL"), "%" + lvl}}), mlp(6));
+        if (!live || cpu <= 0) {
+            TextView tn = text(L.t("CPU/GPU sıcaklığı Shizuku ile ve yalnız oyun sırasında okunur; cihaz ayrı sensör sunmuyorsa \"Yok\" yazar."), 11, TX3, false);
+            tn.setPadding(dp(4), dp(6), 0, 0);
+            perfBox.addView(tn);
+        }
         int[] fps = Live.fpsSeries(), pg = Live.pingSeries(), tp = Live.tempSeries();
         if (fps.length > 1) {
             boolean anyFps = false;
@@ -572,6 +635,10 @@ public class MainActivity extends Activity {
         hzL[1] = L.t("En yüksek (") + Math.round(Tweaks.maxRefresh(this)) + " Hz)"; hzV[1] = "max";
         for (int i = 0; i < rates.size(); i++) { hzL[i + 2] = rates.get(i) + " Hz"; hzV[i + 2] = String.valueOf(rates.get(i)); }
         root.addView(choice(L.t("Yenileme hızı"), "hz_mode", "max", hzL, hzV, this::askAdb));
+        java.util.List<String> tl = new java.util.ArrayList<>(), tv = new java.util.ArrayList<>();
+        int mx = Math.round(Tweaks.maxRefresh(this));
+        for (int t : new int[]{30, 40, 60, 90, 120, 144}) if (t <= Math.max(60, mx)) { tl.add(t + " FPS"); tv.add(String.valueOf(t)); }
+        root.addView(choice(L.t("Hedef FPS"), "target_fps", "60", tl.toArray(new String[0]), tv.toArray(new String[0]), null), mlp(8));
         root.addView(choice(L.t("Arka plan temizliği"), "cleanup", "smart",
                 new String[]{L.t("Akıllı (yalnız RAM azsa)"), L.t("Agresif (her zaman)"), L.t("Kapalı")},
                 new String[]{"smart", "aggressive", "off"}, null), mlp(8));
@@ -1023,6 +1090,11 @@ public class MainActivity extends Activity {
             StringBuilder sb = new StringBuilder();
             if (o.has("avgFps")) sb.append("FPS  ort ").append(o.getInt("avgFps")).append("  ·  en düşük %5: ").append(o.getInt("lowFps")).append("  ·  en yüksek ").append(o.getInt("maxFps")).append('\n');
             if (o.has("avgPing")) sb.append("Ping  ort ").append(o.getInt("avgPing")).append(" ms  ·  en yüksek ").append(o.getInt("maxPing")).append(" ms\n");
+            if (o.has("mAvg") && o.optInt("mAvg") > 0)
+                sb.append(o.optBoolean("exact") ? "✓ " + L.t("Kesin") : "! " + L.t("Yaklaşık")).append(" · FPS ").append(o.optInt("mAvg"))
+                        .append(" · %1 ").append(o.optInt("mLow1")).append(o.optInt("low01") > 0 ? " · %0.1 " + o.optInt("low01") : "")
+                        .append(o.optDouble("p99", -1) > 0 ? String.format(java.util.Locale.US, " · P99 %.1f ms", o.optDouble("p99")) : "").append('\n');
+            if (o.has("loss")) sb.append(String.format(java.util.Locale.US, "ICMP %s %%%.1f · %s %d%n", L.t("kaybı"), o.optDouble("loss"), L.t("ani yükselme"), o.optInt("spikes")));
             if (o.has("stutter") && o.has("avgFps")) sb.append("Takılma ").append(o.getInt("stutter")).append("  ·  ağır kare ").append(o.optInt("heavy")).append('\n');
             sb.append(String.format(java.util.Locale.US, "Sıcaklık  pil en yüksek %.0f°C", o.getDouble("maxBatt")));
             if (o.getDouble("maxCpu") > 0) sb.append(String.format(java.util.Locale.US, "  ·  CPU en yüksek %.0f°C", o.getDouble("maxCpu")));
@@ -1334,12 +1406,173 @@ public class MainActivity extends Activity {
                 if (!BoostService.running) // oyunda ölçümü servis yapar; çift ölçüm yok
                     for (String ip : Boost.dcFor(MainActivity.this, reg == null ? "Avrupa" : reg)) { p = Boost.icmp(ip); if (p > 0) break; }
                 final int fp = BoostService.running ? Integer.MIN_VALUE : p;
-                h.post(() -> { if (fpsBig != null) renderHome(fp); if (tab == 2) renderPerf(); });
+                h.post(() -> { if (fpsBig != null) renderHome(fp); if (tab == 2) renderPerf(); if (tab == 1) renderNetLive(); });
             }).start();
             if (!big.busy) { btnLabel.setTextSize(26); btnLabel.setText(BoostService.running ? L.t("OYUNDA") : "BOOST"); }
             h.postDelayed(this, 3000);
         }
     };
+
+    /* ---------------- DNS testi ---------------- */
+    java.util.List<DnsLab.Result> dnsResults;
+
+    String pdnsLabel() {
+        String[] c = DnsLab.current(this);
+        if ("off".equals(c[0])) return L.t("Kapalı");
+        if ("hostname".equals(c[0])) return c[1] + "  (DoT)";
+        return L.t("Otomatik (operatör)");
+    }
+
+    void openDns() {
+        sheet("DNS", b -> {
+            LinearLayout info = card();
+            info.setOrientation(LinearLayout.VERTICAL);
+            info.setGravity(Gravity.START);
+            info.addView(text(L.t("DNS oyun pingini değiştirmez"), 14, TX, true));
+            TextView it = text(L.t("DNS yalnız alan adını IP'ye çevirir; maç başladıktan sonra oyun doğrudan sunucu IP'siyle konuşur. Aşağıdaki DNS gecikmesi ile oyun sunucusu pingi farklı şeylerdir."), 12, TX2, false);
+            it.setPadding(0, dp(4), 0, 0);
+            info.addView(it);
+            b.addView(info);
+            TextView cur = text(L.t("Özel DNS (sistem): ") + pdnsLabel(), 12, TX2, true);
+            cur.setPadding(dp(4), dp(12), 0, 0);
+            b.addView(cur);
+            if (Boost.vpnActive(this)) {
+                TextView vw = text(L.t("⚠ VPN açık: VPN kendi DNS'ini kullanır; test sonuçları ve Özel DNS VPN üzerinden etkilenmez."), 11, YEL, false);
+                vw.setPadding(dp(4), dp(6), 0, 0);
+                b.addView(vw);
+            }
+            LinearLayout list = new LinearLayout(this);
+            list.setOrientation(LinearLayout.VERTICAL);
+            TextView run = text(L.t("TÜMÜNÜ TEST ET"), 14, Color.WHITE, true);
+            run.setGravity(Gravity.CENTER);
+            run.setPadding(0, dp(14), 0, dp(14));
+            run.setBackground(round(OR, 14));
+            run.setOnClickListener(v -> runDnsTest(list, run, cur));
+            b.addView(run, mlp(12));
+            b.addView(list, mlp(4));
+            LinearLayout back = navCard(L.t("Önceki DNS ayarına dön"), L.t("Remna Boost'un yaptığı değişikliği geri alır"), v -> {
+                if (!Tweaks.secureAllowed(this)) { showAdbHelp(); return; }
+                toast(DnsLab.revert(this) ? L.t("Önceki ayar geri yüklendi") : L.t("Geri alınamadı"));
+                cur.setText(L.t("Özel DNS (sistem): ") + pdnsLabel());
+            });
+            b.addView(back, mlp(14));
+            if (dnsResults != null) renderDns(list, cur);
+        });
+    }
+
+    void runDnsTest(LinearLayout list, TextView run, TextView cur) {
+        run.setEnabled(false);
+        run.setText(L.t("TEST EDİLİYOR…"));
+        list.removeAllViews();
+        new Thread(() -> {
+            java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(6);
+            java.util.List<java.util.concurrent.Future<DnsLab.Result>> fs = new java.util.ArrayList<>();
+            for (DnsLab.Provider pr : DnsLab.PROVIDERS) fs.add(ex.submit(() -> DnsLab.test(pr)));
+            java.util.List<DnsLab.Result> res = new java.util.ArrayList<>();
+            for (java.util.concurrent.Future<DnsLab.Result> f : fs) {
+                try { res.add(f.get(25, java.util.concurrent.TimeUnit.SECONDS)); } catch (Exception ignored) {}
+            }
+            ex.shutdownNow();
+            java.util.Collections.sort(res, (x, y) -> Integer.compare(x.getRank(), y.getRank()));
+            prefs.edit().putLong("dns_test_at", System.currentTimeMillis()).apply();
+            h.post(() -> {
+                dnsResults = res;
+                run.setEnabled(true);
+                run.setText(L.t("TEKRAR TEST ET"));
+                renderDns(list, cur);
+            });
+        }).start();
+    }
+
+    void renderDns(LinearLayout list, TextView cur) {
+        list.removeAllViews();
+        long ago = (System.currentTimeMillis() - prefs.getLong("dns_test_at", 0)) / 1000;
+        TextView when = text(L.t("Son test: ") + (ago < 60 ? ago + L.t(" sn önce") : ago / 60 + L.t(" dk önce")), 11, TX3, false);
+        when.setPadding(dp(4), dp(6), 0, dp(4));
+        list.addView(when);
+        int filteredOthers = 0, others = 0;
+        for (DnsLab.Result r : dnsResults) {
+            if ("AdGuard".equals(r.getProvider().getName()) || r.getOk() == 0) continue;
+            others++;
+            if (r.getFiltered()) filteredOthers++;
+        }
+        if (others >= 2 && filteredOthers == others) {
+            TextView w = text(L.t("⚠ Ağ, DNS trafiğine müdahale ediyor olabilir: farklı sağlayıcılar aynı engelli yanıtı veriyor. Şifreli DNS (DoT) bu müdahaleyi aşar."), 12, YEL, false);
+            w.setPadding(dp(4), dp(4), dp(4), dp(6));
+            list.addView(w);
+        }
+        String[] medals = {"🥇 ", "🥈 ", "🥉 "};
+        int place = 0;
+        DnsLab.Result bestApply = null;
+        for (DnsLab.Result r : dnsResults) {
+            DnsLab.Provider pv = r.getProvider();
+            boolean works = r.getOk() > 0;
+            LinearLayout c = card();
+            c.setOrientation(LinearLayout.VERTICAL);
+            c.setGravity(Gravity.START);
+            LinearLayout top = new LinearLayout(this);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            String medal = works && place < 3 ? medals[place++] : "";
+            top.addView(text(medal + pv.getName(), 15, TX, true), new LinearLayout.LayoutParams(0, -2, 1));
+            top.addView(text(works ? r.getAvg() + " ms" : "—", 17, !works ? RED : r.getAvg() < 80 ? GREEN : r.getAvg() < 150 ? YEL : RED, true));
+            c.addView(top);
+            String st = L.t(r.getStatus()) + "  ·  " + pv.getIp1() + "  ·  " + L.t(pv.getNote());
+            c.addView(text(st, 12, TX2, false));
+            if (works) c.addView(text("UDP 53: " + L.t("en iyi ") + r.getMin() + " · " + L.t("en kötü ") + r.getMax() + " ms · " + L.t("kayıp %") + r.getLossPct(), 11, TX3, false));
+            String dot = pv.getDot() == null ? L.t("Şifreli DNS (DoT): desteklenmiyor")
+                    : r.getDotMs() > 0 ? L.t("Şifreli DNS (DoT): ") + r.getDotMs() + " ms ✓" : L.t("Şifreli DNS (DoT): engelli ✕");
+            c.addView(text(dot, 11, pv.getDot() != null && r.getDotMs() > 0 ? GREEN : TX3, false));
+            if (r.getFiltered()) c.addView(text("AdGuard".equals(pv.getName()) ? L.t("Reklam alan adları engelleniyor (beklenen)") : L.t("⚠ Filtreli yanıt: engelli alan adı 127.0.0.1 döndü"), 11, "AdGuard".equals(pv.getName()) ? TX3 : YEL, false));
+            if (pv.getDot() != null && r.getDotMs() > 0) {
+                if (bestApply == null) bestApply = r;
+                TextView ap = text(L.t("ÖZEL DNS OLARAK UYGULA"), 12, Color.WHITE, true);
+                ap.setGravity(Gravity.CENTER);
+                ap.setPadding(dp(14), dp(9), dp(14), dp(9));
+                ap.setBackground(round(CARD2, 12));
+                ap.setOnClickListener(v -> applyDns(pv, cur));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                lp.topMargin = dp(10);
+                c.addView(ap, lp);
+            }
+            list.addView(c, mlp(8));
+        }
+        if (bestApply != null) {
+            TextView rec = text(L.t("Önerilen: ") + bestApply.getProvider().getName() + " — " + bestApply.getAvg() + " ms (" + L.t("şifreli DNS çalışıyor") + ")", 13, OR, true);
+            rec.setPadding(dp(4), dp(6), 0, dp(4));
+            list.addView(rec, 1);
+        } else {
+            TextView rec = text(L.t("Şifreli DNS (DoT) hiçbir sağlayıcıda çalışmıyor; Özel DNS uygulanırsa internet kesilir. Mevcut ayarda kal."), 12, YEL, false);
+            rec.setPadding(dp(4), dp(6), 0, dp(4));
+            list.addView(rec, 1);
+        }
+        int gp = homePing.median();
+        if (gp > 0) {
+            TextView cmp = text(L.t("Karşılaştırma: oyun sunucusu pingi ") + gp + " ms · " + L.t("DNS gecikmesi ayrı bir ölçümdür."), 11, TX3, false);
+            cmp.setPadding(dp(4), dp(8), 0, 0);
+            list.addView(cmp);
+        }
+    }
+
+    void applyDns(DnsLab.Provider pv, TextView cur) {
+        if (!Tweaks.secureAllowed(this)) { showAdbHelp(); return; }
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(pv.getName() + " · " + L.t("Özel DNS"))
+                .setMessage(L.t("Sistem DNS'i şifreli olarak ") + pv.getDot() + L.t(" adresine yönlendirilecek. Uygulandıktan sonra çalıştığı doğrulanır; çalışmazsa otomatik olarak geri alınır."))
+                .setPositiveButton(L.t("UYGULA"), (d, w) -> {
+                    if (!DnsLab.apply(this, pv.getDot())) { toast(L.t("Uygulanamadı (izin yok)")); return; }
+                    toast(L.t("Doğrulanıyor…"));
+                    new Thread(() -> {
+                        sleep(2500);
+                        boolean ok = DnsLab.verifySystemDns();
+                        if (!ok) DnsLab.revert(this);
+                        h.post(() -> {
+                            toast(ok ? L.t("Uygulandı: ") + pv.getName() + " (DoT)" : L.t("Özel DNS çalışmadı, önceki ayar geri yüklendi"));
+                            cur.setText(L.t("Özel DNS (sistem): ") + pdnsLabel());
+                        });
+                    }).start();
+                })
+                .setNegativeButton(L.t("Vazgeç"), null).show();
+    }
 
     /* ---------------- ağ geçmişi ---------------- */
     void openNetHistory(int days) {

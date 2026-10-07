@@ -266,6 +266,14 @@ final class Sh {
             if (d > 33.4) hv++;
             else if (d > 25) st++;
         }
+        // yalnız daha önce görülmemiş kareler (örnekler arası çakışma olmasın)
+        synchronized (Sh.class) {
+            for (int i = 1; i < m; i++) if (w[i] > lastTs && w[i - 1] > 0) {
+                float d = (w[i] - w[i - 1]) / 1_000_000f;
+                if (d > 0 && d < 1000 && pending.size() < 20000) pending.add(d);
+            }
+            if (m > 0) lastTs = Math.max(lastTs, w[m - 1]);
+        }
         if (m > 1) {
             ftAvg = (float) (sum / (m - 1));
             ftMax = (float) mx;
@@ -277,6 +285,17 @@ final class Sh {
     }
 
     /** Son ölçümün kare süresi verileri (yalnız --latency yöntemiyle; timestats'ta yok). */
+    static long lastTs;
+    private static final java.util.ArrayList<Float> pending = new java.util.ArrayList<>();
+
+    /** Son çağrıdan bu yana ölçülen yeni kare süreleri (ms). */
+    static synchronized float[] drainFrames() {
+        float[] r = new float[pending.size()];
+        for (int i = 0; i < r.length; i++) r[i] = pending.get(i);
+        pending.clear();
+        return r;
+    }
+
     static volatile boolean ftValid;
     static volatile float ftAvg, ftMax;
     static volatile int stutters, heavy;

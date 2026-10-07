@@ -53,12 +53,14 @@ final class Perf {
     /** Okunan sensör adında "cpu" varsa "CPU", yoksa genel L.t("Sensör") (yanlış etiketleme yapılmaz). */
     static volatile String cpuLabel = "CPU";
     static float cpuCache = -1;
+    /** GPU sıcaklığı (°C); ayrı bir GPU sensörü yoksa -1 (asla CPU değeri kopyalanmaz). */
+    static volatile float gpuCache = -1;
 
     /** İşlemci sıcaklığı (°C), Shizuku ile thermal zone'lardan; okunamazsa -1. */
     static float cpuTemp() {
         if (System.currentTimeMillis() - cpuAt < 5000) return cpuCache;
         cpuAt = System.currentTimeMillis();
-        float best = -1;
+        float best = -1, gpu = -1;
         String bestType = "";
         String out = Sh.granted()
                 ? Sh.exec("for z in /sys/class/thermal/thermal_zone*; do echo \"$(cat $z/type 2>/dev/null):$(cat $z/temp 2>/dev/null)\"; done")
@@ -68,7 +70,15 @@ final class Perf {
             if (i < 0) continue;
             String type = l.substring(0, i).toLowerCase();
             if (!(type.contains("cpu") || type.equals("ap") || type.contains("soc") || type.contains("tsens"))) continue;
-            if (type.contains("gpu") || type.contains("batt")) continue;
+            if (type.contains("gpu")) {
+                try {
+                    float g = Float.parseFloat(l.substring(i + 1).trim());
+                    if (g > 1000) g /= 1000f;
+                    if (g > 15 && g < 125 && g > gpu) gpu = g;
+                } catch (NumberFormatException ignored) {}
+                continue;
+            }
+            if (type.contains("batt")) continue;
             try {
                 float v = Float.parseFloat(l.substring(i + 1).trim());
                 if (v > 1000) v /= 1000f;
@@ -76,8 +86,29 @@ final class Perf {
             } catch (NumberFormatException ignored) {}
         }
         cpuCache = best;
+        gpuCache = gpu;
         cpuLabel = bestType.contains("cpu") ? "CPU" : L.t("Sensör");
         return best;
+    }
+
+    /**
+     * Cihazın kendi termal durumu (Android PowerManager, API 29+): sistemin gerçekten kısıtlama yapıp yapmadığını söyler.
+     * {kod, etiket}; kod: 0 normal, 1 ılık, 2 sıcak, 3+ kısıtlama.
+     */
+    static int thermalStatus(Context c) {
+        if (android.os.Build.VERSION.SDK_INT < 29) return -1;
+        android.os.PowerManager pm = c.getSystemService(android.os.PowerManager.class);
+        return pm == null ? -1 : pm.getCurrentThermalStatus();
+    }
+
+    static String thermalLabel(int st) {
+        switch (st) {
+            case -1: return L.t("Bilinmiyor");
+            case 0: return "✓ " + L.t("NORMAL");
+            case 1: return "! " + L.t("ILIK");
+            case 2: return "! " + L.t("SICAK");
+            default: return "⚠ " + L.t("KISILIYOR");
+        }
     }
 
     /* ---------------- şarj / bypass ---------------- */
@@ -99,7 +130,9 @@ final class Perf {
         final long start = System.currentTimeMillis();
         final List<Integer> fps = new ArrayList<>(), ping = new ArrayList<>();
         float maxBatt = 0, maxCpu = 0;
-        int stutter, heavy;
+        int stutter, heavy, spikes;
+        FrameMetrics metrics;
+        float icmpLoss = -1;
 
         void add(int f, int p, float batt, float cpu) {
             if (f >= 10) fps.add(f);
@@ -118,6 +151,17 @@ final class Perf {
                 o.put("maxBatt", maxBatt);
                 o.put("maxCpu", maxCpu);
                 o.put("stutter", stutter);
+                o.put("spikes", spikes);
+                if (icmpLoss >= 0) o.put("loss", icmpLoss);
+                if (metrics != null) {
+                    o.put("exact", metrics.exact);
+                    o.put("low01", Math.round(metrics.low01));
+                    o.put("p95", metrics.p95);
+                    o.put("p99", metrics.p99);
+                    o.put("fstab", metrics.frameStability);
+                    o.put("mAvg", Math.round(metrics.avgFps));
+                    o.put("mLow1", Math.round(metrics.low1));
+                }
                 o.put("heavy", heavy);
                 if (!fps.isEmpty()) {
                     List<Integer> s = new ArrayList<>(fps);
