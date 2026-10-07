@@ -253,7 +253,7 @@ final class Boost {
 
     static int execPingOnce(String ip, int waitSec) {
         if (!ip.matches("[0-9.]+")) return -1;
-        Process p = null;
+        java.lang.Process p = null;
         try {
             p = Runtime.getRuntime().exec(new String[]{"/system/bin/ping", "-c", "1", "-W", String.valueOf(waitSec), ip});
             try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
@@ -283,7 +283,7 @@ final class Boost {
     /** /system/bin/ping ile ölçüm (3 deneme, en iyisi). Yanıt yoksa -1. */
     static int execPing(String ip) {
         if (!ip.matches("[0-9.]+")) return -1;
-        Process p = null;
+        java.lang.Process p = null;
         try {
             p = Runtime.getRuntime().exec(new String[]{"/system/bin/ping", "-c", "3", "-i", "0.2", "-W", "1", ip});
             int best = -1;
